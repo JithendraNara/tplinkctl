@@ -1,0 +1,765 @@
+"""Command line interface for local TP-Link router administration."""
+
+from __future__ import annotations
+
+import argparse
+import dataclasses
+import enum
+import fcntl
+import getpass
+import ipaddress
+import json
+import os
+import re
+import sys
+from datetime import datetime, timezone
+from collections.abc import Iterable
+from contextlib import contextmanager
+from html.parser import HTMLParser
+from pathlib import Path
+from typing import Any
+from urllib.parse import urljoin
+
+from . import __version__
+
+import requests
+
+try:
+    from tplinkrouterc6u import (
+        Connection,
+        TplinkRouterProvider,
+        TplinkRouterSG,
+        VPN,
+    )
+except ModuleNotFoundError as exc:
+    print(
+        "Missing dependency: tplinkrouterc6u. Run `python -m pip install -e .`.",
+        file=sys.stderr,
+    )
+    raise SystemExit(2) from exc
+
+
+APP_NAME = "tplink-admin"
+DEFAULT_HOST = "http://192.168.0.1"
+DEFAULT_BUNDLE_DIR = "js"
+DEFAULTS = {
+    "host": DEFAULT_HOST,
+    "username": "admin",
+    "client": "sg",
+    "timeout": 30,
+    "verify_ssl": True,
+}
+ENV_MAP = {
+    "host": "TPLINK_HOST",
+    "username": "TPLINK_USERNAME",
+    "client": "TPLINK_CLIENT",
+    "timeout": "TPLINK_TIMEOUT",
+}
+COMMAND_ENV = {
+    "enable": "TPLINK_ENABLE_COMMANDS",
+    "disable": "TPLINK_DISABLE_COMMANDS",
+}
+
+
+class MetaParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.meta: dict[str, str] = {}
+        self.scripts: list[str] = []
+        self.stylesheets: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attr = {key: value for key, value in attrs if value is not None}
+        if tag == "meta" and attr.get("name"):
+            self.meta[attr["name"]] = attr.get("content", "")
+        elif tag == "script" and attr.get("src"):
+            self.scripts.append(attr["src"])
+        elif tag == "link" and attr.get("rel") == "stylesheet" and attr.get("href"):
+            self.stylesheets.append(attr["href"])
+
+
+def config_dir() -> Path:
+    base = os.getenv("XDG_CONFIG_HOME")
+    return Path(base).expanduser() / APP_NAME if base else Path.home() / ".config" / APP_NAME
+
+
+def config_path() -> Path:
+    return config_dir() / "config.json"
+
+
+def lock_path() -> Path:
+    return config_dir() / "session.lock"
+
+
+@contextmanager
+def session_lock(enabled: bool):
+    if not enabled:
+        yield
+        return
+    path = lock_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def load_config() -> dict[str, Any]:
+    path = config_path()
+    if not path.exists():
+        return {}
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"Invalid config JSON at {path}: {exc}") from exc
+    if not isinstance(loaded, dict):
+        raise SystemExit(f"Invalid config at {path}: expected a JSON object.")
+    return loaded
+
+
+def save_config(config: dict[str, Any]) -> None:
+    path = config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(config, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def merged_config() -> dict[str, Any]:
+    config = {**DEFAULTS, **load_config()}
+    for key, env_name in ENV_MAP.items():
+        if env_name in os.environ:
+            config[key] = os.environ[env_name]
+    if "TPLINK_VERIFY_SSL" in os.environ:
+        config["verify_ssl"] = bool_arg(os.environ["TPLINK_VERIFY_SSL"])
+    config["timeout"] = int(config["timeout"])
+    return config
+
+
+def to_plain(value: Any) -> Any:
+    if dataclasses.is_dataclass(value):
+        return {field.name: to_plain(getattr(value, field.name)) for field in dataclasses.fields(value)}
+    if isinstance(value, enum.Enum):
+        return value.value
+    if isinstance(value, (ipaddress.IPv4Address, ipaddress.IPv6Address)):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(key): to_plain(item) for key, item in value.items()}
+    if isinstance(value, Iterable) and not isinstance(value, (str, bytes, bytearray)):
+        return [to_plain(item) for item in value]
+    try:
+        json.dumps(value)
+        return value
+    except TypeError:
+        return str(value)
+
+
+def print_json(value: Any) -> None:
+    print(json.dumps(to_plain(value), indent=2, sort_keys=True))
+
+
+def emit(args: argparse.Namespace, value: Any) -> None:
+    output = getattr(args, "output", None) or output_from_env()
+    if output == "json":
+        print_json(value)
+        return
+    print_plain(to_plain(value))
+
+
+def output_from_env() -> str:
+    if bool_env("TPLINK_JSON"):
+        return "json"
+    if bool_env("TPLINK_PLAIN"):
+        return "plain"
+    return "plain"
+
+
+def bool_env(name: str) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return False
+    try:
+        return bool_arg(value)
+    except argparse.ArgumentTypeError:
+        return False
+
+
+def print_plain(value: Any) -> None:
+    if isinstance(value, list):
+        print_table(value)
+    elif isinstance(value, dict):
+        for key in sorted(value):
+            item = value[key]
+            if isinstance(item, (dict, list)):
+                print(f"{key}\t{json.dumps(item, sort_keys=True)}")
+            else:
+                print(f"{key}\t{item}")
+    else:
+        print(value)
+
+
+def print_table(rows: list[Any]) -> None:
+    if not rows:
+        return
+    if not all(isinstance(row, dict) for row in rows):
+        for row in rows:
+            print(row)
+        return
+    keys = list(dict.fromkeys(key for row in rows for key in row.keys()))
+    print("\t".join(keys))
+    for row in rows:
+        print("\t".join(format_cell(row.get(key, "")) for key in keys))
+
+
+def format_cell(value: Any) -> str:
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, sort_keys=True)
+    return str(value)
+
+
+def normalize_api_path(path: str) -> str:
+    return path.lstrip("/")
+
+
+def safe_call(label: str, func) -> dict[str, Any]:
+    try:
+        return {"ok": True, "data": to_plain(func())}
+    except Exception as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
+def is_private_ip(value: str | None) -> bool:
+    if not value:
+        return False
+    try:
+        return ipaddress.ip_address(value).is_private
+    except ValueError:
+        return False
+
+
+def status_summary(status: dict[str, Any]) -> dict[str, Any]:
+    devices = status.get("devices", [])
+    active_devices = [device for device in devices if device.get("active")]
+    by_type: dict[str, int] = {}
+    for device in active_devices:
+        by_type[device.get("type", "unknown")] = by_type.get(device.get("type", "unknown"), 0) + 1
+    return {
+        "wan_ip": status.get("_wan_ipv4_addr"),
+        "wan_gateway": status.get("_wan_ipv4_gateway"),
+        "lan_ip": status.get("_lan_ipv4_addr"),
+        "cpu_usage": status.get("cpu_usage"),
+        "mem_usage": status.get("mem_usage"),
+        "wan_uptime_seconds": status.get("wan_ipv4_uptime"),
+        "clients": {
+            "reported_total": status.get("clients_total"),
+            "active_seen": len(active_devices),
+            "wired": status.get("wired_total"),
+            "wifi": status.get("wifi_clients_total"),
+            "guest": status.get("guest_clients_total"),
+            "iot": status.get("iot_clients_total"),
+            "by_type": by_type,
+        },
+        "wifi": wifi_summary(status),
+    }
+
+
+def wifi_summary(status: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "host_2g": status.get("wifi_2g_enable"),
+        "host_5g": status.get("wifi_5g_enable"),
+        "host_6g": status.get("wifi_6g_enable"),
+        "guest_2g": status.get("guest_2g_enable"),
+        "guest_5g": status.get("guest_5g_enable"),
+        "guest_6g": status.get("guest_6g_enable"),
+        "iot_2g": status.get("iot_2g_enable"),
+        "iot_5g": status.get("iot_5g_enable"),
+        "iot_6g": status.get("iot_6g_enable"),
+    }
+
+
+def health_from(status: dict[str, Any], firmware: dict[str, Any], ipv4: dict[str, Any]) -> dict[str, Any]:
+    warnings: list[str] = []
+    cpu_usage = status.get("cpu_usage")
+    mem_usage = status.get("mem_usage")
+    wan_ip = status.get("_wan_ipv4_addr") or ipv4.get("_wan_ipv4_ipaddr")
+    if isinstance(cpu_usage, (int, float)) and cpu_usage >= 0.8:
+        warnings.append(f"High CPU usage: {cpu_usage:.0%}")
+    if isinstance(mem_usage, (int, float)) and mem_usage >= 0.8:
+        warnings.append(f"High memory usage: {mem_usage:.0%}")
+    if is_private_ip(wan_ip):
+        warnings.append(f"WAN IP {wan_ip} is private; router appears to be behind another NAT.")
+    if not status.get("wifi_2g_enable") and not status.get("wifi_5g_enable") and not status.get("wifi_6g_enable"):
+        warnings.append("Main Wi-Fi networks appear disabled.")
+    return {
+        "ok": not warnings,
+        "model": firmware.get("model"),
+        "hardware_version": firmware.get("hardware_version"),
+        "firmware_version": firmware.get("firmware_version"),
+        "summary": status_summary(status),
+        "warnings": warnings,
+    }
+
+
+def bundle_dir_from_args(args: argparse.Namespace) -> Path:
+    return Path(args.bundle_dir or os.getenv("TPLINK_BUNDLE_DIR", DEFAULT_BUNDLE_DIR)).expanduser()
+
+
+def js_files(bundle_dir: Path) -> list[Path]:
+    if not bundle_dir.exists():
+        return []
+    return sorted(bundle_dir.glob("*.js"))
+
+
+def discover_endpoints(bundle_dir: Path) -> list[dict[str, Any]]:
+    endpoint_re = re.compile(r"""["'`]((?:/admin|/accessibility)[^"'`\\\s]+?\?form=[^"'`\\\s]+)["'`]""")
+    found: dict[tuple[str, str], dict[str, Any]] = {}
+    for path in js_files(bundle_dir):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for match in endpoint_re.finditer(text):
+            endpoint = match.group(1)
+            window = text[max(0, match.start() - 80):match.end() + 120]
+            operations = []
+            for operation in ("read", "write", "request", "file"):
+                if f".{operation}(" in window or f"{operation}(" in window:
+                    operations.append(operation)
+            key = (endpoint, path.name)
+            existing = found.setdefault(key, {"endpoint": endpoint, "file": path.name, "operations": []})
+            existing["operations"] = sorted(set(existing["operations"]) | set(operations or ["unknown"]))
+    return sorted(found.values(), key=lambda item: (item["endpoint"], item["file"]))
+
+
+def discover_routes(bundle_dir: Path) -> list[dict[str, str]]:
+    route_file = bundle_dir / "index-ESh8tgBq.js"
+    if not route_file.exists():
+        return []
+    text = route_file.read_text(encoding="utf-8", errors="replace")
+    route_re = re.compile(r"""\{name:"(?P<name>[^"]+)",path:"(?P<path>[^"]*)",component:\(\)=>o\(\(\)=>import\("\./(?P<bundle>[^"]+)""")
+    return [
+        match.groupdict()
+        for match in route_re.finditer(text)
+    ]
+
+
+def bool_arg(value: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized in {"1", "on", "true", "yes", "enable", "enabled"}:
+        return True
+    if normalized in {"0", "off", "false", "no", "disable", "disabled"}:
+        return False
+    raise argparse.ArgumentTypeError("expected one of: on/off, true/false, yes/no")
+
+
+def connection_arg(value: str) -> Connection:
+    normalized = value.strip().lower().replace("-", "_")
+    for connection in Connection:
+        if normalized in {connection.name.lower(), connection.value.lower()}:
+            if connection is Connection.UNKNOWN:
+                break
+            return connection
+    choices = ", ".join(item.value for item in Connection if item is not Connection.UNKNOWN)
+    raise argparse.ArgumentTypeError(f"unknown connection `{value}`; choose one of: {choices}")
+
+
+def vpn_arg(value: str) -> VPN:
+    normalized = value.strip().lower().replace("-", "_")
+    for vpn in VPN:
+        if normalized in {vpn.name.lower(), vpn.value.lower()}:
+            return vpn
+    choices = ", ".join(item.value for item in VPN)
+    raise argparse.ArgumentTypeError(f"unknown vpn `{value}`; choose one of: {choices}")
+
+
+def password_from_args(args: argparse.Namespace) -> str:
+    password = args.password or os.getenv("TPLINK_PASSWORD")
+    if password:
+        return password
+    if getattr(args, "no_input", False):
+        raise SystemExit("Password required. Set TPLINK_PASSWORD or pass --password.")
+    return getpass.getpass("TP-Link local admin password: ")
+
+
+def apply_runtime_defaults(args: argparse.Namespace) -> argparse.Namespace:
+    config = merged_config()
+    for key in ("host", "username", "client", "timeout", "verify_ssl"):
+        if getattr(args, key, None) is None:
+            setattr(args, key, config[key])
+    return args
+
+
+def build_router(args: argparse.Namespace):
+    password = password_from_args(args)
+    if args.client == "sg":
+        return TplinkRouterSG(args.host, password, args.username, verify_ssl=args.verify_ssl, timeout=args.timeout)
+    return TplinkRouterProvider.get_client(
+        args.host,
+        password,
+        args.username,
+        verify_ssl=args.verify_ssl,
+        timeout=args.timeout,
+    )
+
+
+def with_session(args: argparse.Namespace, action):
+    args = apply_runtime_defaults(args)
+    with session_lock(not args.no_lock):
+        router = build_router(args)
+        router.authorize()
+        try:
+            return action(router)
+        finally:
+            router.logout()
+
+
+def cmd_firmware(args: argparse.Namespace) -> None:
+    emit(args, with_session(args, lambda router: router.get_firmware()))
+
+
+def cmd_status(args: argparse.Namespace) -> None:
+    emit(args, with_session(args, lambda router: router.get_status()))
+
+
+def cmd_health(args: argparse.Namespace) -> None:
+    def action(router):
+        firmware = to_plain(router.get_firmware())
+        status = to_plain(router.get_status())
+        ipv4 = to_plain(router.get_ipv4_status())
+        return health_from(status, firmware, ipv4)
+
+    emit(args, with_session(args, action))
+
+
+def cmd_wan(args: argparse.Namespace) -> None:
+    def action(router):
+        status = to_plain(router.get_status())
+        ipv4 = to_plain(router.get_ipv4_status())
+        return {
+            "wan_ip": status.get("_wan_ipv4_addr") or ipv4.get("_wan_ipv4_ipaddr"),
+            "wan_gateway": status.get("_wan_ipv4_gateway") or ipv4.get("_wan_ipv4_gateway"),
+            "wan_mac": status.get("_wan_macaddr") or ipv4.get("_wan_macaddr"),
+            "wan_uptime_seconds": status.get("wan_ipv4_uptime"),
+            "connection_type": status.get("conn_type") or ipv4.get("_wan_ipv4_conntype"),
+            "netmask": ipv4.get("_wan_ipv4_netmask"),
+            "primary_dns": ipv4.get("_wan_ipv4_pridns"),
+            "secondary_dns": ipv4.get("_wan_ipv4_snddns"),
+            "double_nat_likely": is_private_ip(status.get("_wan_ipv4_addr") or ipv4.get("_wan_ipv4_ipaddr")),
+        }
+
+    emit(args, with_session(args, action))
+
+
+def cmd_wifi_status(args: argparse.Namespace) -> None:
+    emit(args, with_session(args, lambda router: wifi_summary(to_plain(router.get_status()))))
+
+
+def cmd_ipv4(args: argparse.Namespace) -> None:
+    emit(args, with_session(args, lambda router: router.get_ipv4_status()))
+
+
+def cmd_leases(args: argparse.Namespace) -> None:
+    emit(args, with_session(args, lambda router: router.get_ipv4_dhcp_leases()))
+
+
+def cmd_reservations(args: argparse.Namespace) -> None:
+    emit(args, with_session(args, lambda router: router.get_ipv4_reservations()))
+
+
+def cmd_clients(args: argparse.Namespace) -> None:
+    def action(router):
+        status = to_plain(router.get_status())
+        devices = status.get("devices", [])
+        if args.active:
+            devices = [device for device in devices if device.get("active")]
+        if args.connection:
+            devices = [device for device in devices if device.get("type") == args.connection.value]
+        return devices
+
+    emit(args, with_session(args, action))
+
+
+def cmd_wifi(args: argparse.Namespace) -> None:
+    def action(router):
+        router.set_wifi(args.connection, args.enabled)
+        return {"connection": args.connection.value, "enabled": args.enabled}
+
+    emit(args, with_session(args, action))
+
+
+def cmd_vpn_status(args: argparse.Namespace) -> None:
+    emit(args, with_session(args, lambda router: router.get_vpn_status()))
+
+
+def cmd_vpn(args: argparse.Namespace) -> None:
+    def action(router):
+        router.set_vpn(args.vpn, args.enabled)
+        return {"vpn": args.vpn.value, "enabled": args.enabled}
+
+    emit(args, with_session(args, action))
+
+
+def cmd_vpn_client_status(args: argparse.Namespace) -> None:
+    emit(args, with_session(args, lambda router: router.get_vpn_client_status()))
+
+
+def cmd_vpn_client(args: argparse.Namespace) -> None:
+    def action(router):
+        router.set_vpn_client(args.enabled)
+        return {"vpn_client": args.enabled}
+
+    emit(args, with_session(args, action))
+
+
+def cmd_reboot(args: argparse.Namespace) -> None:
+    if not args.yes and not args.force:
+        raise SystemExit("Refusing to reboot without --yes.")
+    emit(args, with_session(args, lambda router: router.reboot() or {"reboot": "requested"}))
+
+
+def cmd_raw(args: argparse.Namespace) -> None:
+    payload = args.data
+    if args.data_file:
+        payload = Path(args.data_file).read_text(encoding="utf-8")
+
+    def action(router):
+        return router.request(
+            normalize_api_path(args.path),
+            payload,
+            ignore_response=args.ignore_response,
+            ignore_errors=args.ignore_errors,
+        )
+
+    emit(args, with_session(args, action))
+
+
+def cmd_read(args: argparse.Namespace) -> None:
+    def action(router):
+        return router.request(
+            normalize_api_path(args.path),
+            "operation=read",
+            ignore_errors=args.ignore_errors,
+        )
+
+    emit(args, with_session(args, action))
+
+
+def cmd_snapshot(args: argparse.Namespace) -> None:
+    def action(router):
+        snapshot = {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "firmware": safe_call("firmware", router.get_firmware),
+            "status": safe_call("status", router.get_status),
+            "ipv4": safe_call("ipv4", router.get_ipv4_status),
+            "leases": safe_call("leases", router.get_ipv4_dhcp_leases),
+            "reservations": safe_call("reservations", router.get_ipv4_reservations),
+            "vpn_status": safe_call("vpn_status", router.get_vpn_status),
+            "vpn_client_status": safe_call("vpn_client_status", router.get_vpn_client_status),
+        }
+        firmware = snapshot["firmware"].get("data") if snapshot["firmware"]["ok"] else {}
+        status = snapshot["status"].get("data") if snapshot["status"]["ok"] else {}
+        ipv4 = snapshot["ipv4"].get("data") if snapshot["ipv4"]["ok"] else {}
+        snapshot["health"] = health_from(status, firmware, ipv4) if status and firmware else {"ok": False, "warnings": ["Incomplete snapshot."]}
+        return snapshot
+
+    emit(args, with_session(args, action))
+
+
+def cmd_doctor(args: argparse.Namespace) -> None:
+    args = apply_runtime_defaults(args)
+    url = urljoin(args.host.rstrip("/") + "/", "webpages/index.html")
+    try:
+        response = requests.get(url, timeout=args.timeout, verify=args.verify_ssl)
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        raise SystemExit(f"Router web UI check failed: {exc}") from exc
+    parser = MetaParser()
+    parser.feed(response.text)
+    emit(
+        args,
+        {
+            "ok": True,
+            "url": url,
+            "status_code": response.status_code,
+            "meta": parser.meta,
+            "scripts": parser.scripts,
+            "stylesheets": parser.stylesheets,
+        },
+    )
+
+
+def cmd_endpoints(args: argparse.Namespace) -> None:
+    endpoints = discover_endpoints(bundle_dir_from_args(args))
+    if args.form:
+        endpoints = [endpoint for endpoint in endpoints if args.form in endpoint["endpoint"]]
+    emit(args, endpoints)
+
+
+def cmd_routes(args: argparse.Namespace) -> None:
+    routes = discover_routes(bundle_dir_from_args(args))
+    if args.name:
+        routes = [route for route in routes if args.name.lower() in route["name"].lower()]
+    emit(args, routes)
+
+
+def cmd_config_path(_: argparse.Namespace) -> None:
+    print(config_path())
+
+
+def cmd_config_show(_: argparse.Namespace) -> None:
+    config = merged_config()
+    config["config_path"] = str(config_path())
+    config["password"] = "set via TPLINK_PASSWORD" if os.getenv("TPLINK_PASSWORD") else "not stored"
+    emit(_, config)
+
+
+def cmd_config_set(args: argparse.Namespace) -> None:
+    config = load_config()
+    updates = {
+        "host": args.host,
+        "username": args.username,
+        "client": args.client,
+        "timeout": args.timeout,
+        "verify_ssl": args.verify_ssl,
+    }
+    for key, value in updates.items():
+        if value is not None:
+            config[key] = value
+    save_config(config)
+    emit(args, {"saved": str(config_path()), "config": config})
+
+
+def parse_csv(value: str | None) -> set[str]:
+    if not value:
+        return set()
+    return {item.strip() for item in value.split(",") if item.strip()}
+
+
+def ensure_command_allowed(args: argparse.Namespace) -> None:
+    command = getattr(args, "command", "")
+    enabled = parse_csv(args.enable_commands) or parse_csv(os.getenv(COMMAND_ENV["enable"]))
+    disabled = parse_csv(args.disable_commands) or parse_csv(os.getenv(COMMAND_ENV["disable"]))
+    if enabled and command not in enabled:
+        raise SystemExit(f"Command `{command}` blocked by allowlist: {', '.join(sorted(enabled))}")
+    if command in disabled:
+        raise SystemExit(f"Command `{command}` blocked by denylist.")
+
+
+def add_common(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--host", default=None, help=f"router URL (default: {DEFAULT_HOST})")
+    parser.add_argument("--username", default=None, help="local admin username")
+    parser.add_argument("--password", default=None, help="local admin password; otherwise prompts or reads TPLINK_PASSWORD")
+    parser.add_argument("--timeout", type=int, default=None, help="HTTP timeout in seconds")
+    parser.add_argument("--client", choices=["auto", "sg"], default=None, help="client type; sg is useful for BE-series routers")
+    parser.add_argument("--verify-ssl", action="store_true", default=None, help="enable HTTPS certificate verification")
+    parser.add_argument("--no-verify-ssl", action="store_false", dest="verify_ssl", help="disable HTTPS certificate verification")
+    parser.add_argument("--json", action="store_const", const="json", dest="output", default=None, help="print JSON to stdout")
+    parser.add_argument("--plain", action="store_const", const="plain", dest="output", help="print stable TSV/key-value text to stdout")
+    parser.add_argument("--no-input", action="store_true", help="never prompt; fail if required input is missing")
+    parser.add_argument("--no-lock", action="store_true", help="do not serialize authenticated router sessions")
+    parser.add_argument("--enable-commands", help="comma-separated allowlist for agent use, e.g. status,leases")
+    parser.add_argument("--disable-commands", help="comma-separated denylist for agent use, e.g. reboot,wifi")
+
+
+def add_simple_commands(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    commands = {
+        "firmware": (cmd_firmware, "show firmware and model info"),
+        "health": (cmd_health, "summarize router health and likely issues"),
+        "status": (cmd_status, "show router, WAN, Wi-Fi, and client status"),
+        "snapshot": (cmd_snapshot, "collect a broad read-only router snapshot"),
+        "wan": (cmd_wan, "show WAN summary"),
+        "wifi-status": (cmd_wifi_status, "show Wi-Fi network enablement"),
+        "ipv4": (cmd_ipv4, "show WAN/LAN IPv4 status"),
+        "leases": (cmd_leases, "list DHCP leases"),
+        "reservations": (cmd_reservations, "list IPv4 DHCP reservations"),
+        "doctor": (cmd_doctor, "check router web UI reachability without logging in"),
+        "vpn-status": (cmd_vpn_status, "show VPN server status"),
+        "vpn-client-status": (cmd_vpn_client_status, "show VPN client status"),
+    }
+    for name, (func, help_text) in commands.items():
+        subparser = subparsers.add_parser(name, help=help_text)
+        subparser.set_defaults(func=func)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="tplinkctl",
+        description="Manage a TP-Link router admin page from the terminal.",
+    )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    add_common(parser)
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    add_simple_commands(subparsers)
+
+    wifi = subparsers.add_parser("wifi", help="enable or disable a Wi-Fi network")
+    wifi.add_argument("connection", type=connection_arg, help="for example: host_2g, host_5g, host_6g, guest_2g, iot_2g")
+    wifi.add_argument("enabled", type=bool_arg, help="on/off")
+    wifi.set_defaults(func=cmd_wifi)
+
+    clients = subparsers.add_parser("clients", help="list connected clients from status")
+    clients.add_argument("--active", action="store_true", help="show only active clients")
+    clients.add_argument("--connection", type=connection_arg, help="filter by connection, e.g. host_5g")
+    clients.set_defaults(func=cmd_clients)
+
+    vpn = subparsers.add_parser("vpn", help="enable or disable a VPN server")
+    vpn.add_argument("vpn", type=vpn_arg, help="for example: OPENVPN, PPTPVPN, IPSEC")
+    vpn.add_argument("enabled", type=bool_arg, help="on/off")
+    vpn.set_defaults(func=cmd_vpn)
+
+    vpn_client = subparsers.add_parser("vpn-client", help="enable or disable the VPN client")
+    vpn_client.add_argument("enabled", type=bool_arg, help="on/off")
+    vpn_client.set_defaults(func=cmd_vpn_client)
+
+    reboot = subparsers.add_parser("reboot", help="reboot the router")
+    reboot.add_argument("--yes", action="store_true", help="confirm reboot")
+    reboot.add_argument("--force", action="store_true", help="alias for --yes")
+    reboot.set_defaults(func=cmd_reboot)
+
+    raw = subparsers.add_parser("raw", help="advanced: call the underlying router request API")
+    raw.add_argument("path", help="router API path, for example /admin/network?form=wan_ipv4")
+    raw.add_argument("--data", default="", help="request payload string")
+    raw.add_argument("--data-file", help="read request payload from a file")
+    raw.add_argument("--ignore-response", action="store_true")
+    raw.add_argument("--ignore-errors", action="store_true")
+    raw.set_defaults(func=cmd_raw)
+
+    read = subparsers.add_parser("read", help="advanced: read an endpoint with operation=read")
+    read.add_argument("path", help="router API path, for example /admin/network?form=wan_ipv4_status")
+    read.add_argument("--ignore-errors", action="store_true")
+    read.set_defaults(func=cmd_read)
+
+    endpoints = subparsers.add_parser("endpoints", help="discover API endpoints from downloaded router JS bundles")
+    endpoints.add_argument("--bundle-dir", default=None, help=f"directory with router JS bundles (default: {DEFAULT_BUNDLE_DIR})")
+    endpoints.add_argument("--form", help="filter endpoint path/form text")
+    endpoints.set_defaults(func=cmd_endpoints)
+
+    routes = subparsers.add_parser("routes", help="discover UI routes from downloaded router JS bundles")
+    routes.add_argument("--bundle-dir", default=None, help=f"directory with router JS bundles (default: {DEFAULT_BUNDLE_DIR})")
+    routes.add_argument("--name", help="filter route name")
+    routes.set_defaults(func=cmd_routes)
+
+    config = subparsers.add_parser("config", help="manage saved CLI defaults")
+    config_subparsers = config.add_subparsers(dest="config_command", required=True)
+    config_path_parser = config_subparsers.add_parser("path", help="print config file path")
+    config_path_parser.set_defaults(func=cmd_config_path)
+    config_show = config_subparsers.add_parser("show", help="show effective config")
+    config_show.set_defaults(func=cmd_config_show)
+    config_set = config_subparsers.add_parser("set", help="save non-secret defaults")
+    config_set.add_argument("--host")
+    config_set.add_argument("--username")
+    config_set.add_argument("--client", choices=["auto", "sg"])
+    config_set.add_argument("--timeout", type=int)
+    config_set.add_argument("--verify-ssl", action="store_true", default=None)
+    config_set.add_argument("--no-verify-ssl", action="store_false", dest="verify_ssl")
+    config_set.set_defaults(func=cmd_config_set)
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    ensure_command_allowed(args)
+    args.func(args)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
