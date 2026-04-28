@@ -12,6 +12,7 @@ import json
 import os
 import re
 import sys
+import time
 from datetime import datetime, timezone
 from collections.abc import Iterable
 from contextlib import contextmanager
@@ -59,6 +60,22 @@ COMMAND_ENV = {
     "enable": "TPLINK_ENABLE_COMMANDS",
     "disable": "TPLINK_DISABLE_COMMANDS",
 }
+WIFI_ENDPOINTS = {
+    "main": (
+        "admin/wireless?form=wireless_2g&form=wireless_5g&form=wireless_5g_2&form=wireless_6g",
+        "operation=read",
+    ),
+    "guest": (
+        "admin/wireless?form=guest_2g&form=guest_5g&form=guest_2g5g",
+        "operation=read",
+    ),
+    "iot": (
+        "admin/wireless?form=iot_2g&form=iot_5g&form=iot_5g_2",
+        "operation=read_spf",
+    ),
+    "smart_connect": ("admin/wireless?form=smart_connect", "operation=read"),
+}
+SENSITIVE_KEY_RE = re.compile(r"(password|passwd|psk|key|secret|token)", re.IGNORECASE)
 
 
 class MetaParser(HTMLParser):
@@ -217,6 +234,45 @@ def format_cell(value: Any) -> str:
     return str(value)
 
 
+def number_or_zero(value: Any) -> float:
+    if value in (None, ""):
+        return 0.0
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def human_bytes(value: Any) -> str:
+    amount = number_or_zero(value)
+    units = ["B", "KB", "MB", "GB", "TB"]
+    for unit in units:
+        if abs(amount) < 1024 or unit == units[-1]:
+            return f"{amount:.1f} {unit}" if unit != "B" else f"{amount:.0f} B"
+        amount /= 1024
+    return f"{amount:.1f} TB"
+
+
+def human_rate(value: Any) -> str:
+    return f"{human_bytes(value)}/s"
+
+
+def redact_value(key: str, value: Any) -> Any:
+    if SENSITIVE_KEY_RE.search(key):
+        if value in (None, ""):
+            return value
+        return "[redacted]"
+    if isinstance(value, dict):
+        return {item_key: redact_value(item_key, item_value) for item_key, item_value in value.items()}
+    if isinstance(value, list):
+        return [redact_value(key, item) for item in value]
+    return value
+
+
+def redact_mapping(value: dict[str, Any]) -> dict[str, Any]:
+    return {key: redact_value(key, item) for key, item in value.items()}
+
+
 def normalize_api_path(path: str) -> str:
     return path.lstrip("/")
 
@@ -240,6 +296,7 @@ def is_private_ip(value: str | None) -> bool:
 def status_summary(status: dict[str, Any]) -> dict[str, Any]:
     devices = status.get("devices", [])
     active_devices = [device for device in devices if device.get("active")]
+    speed = speed_summary(device_rows(status))
     by_type: dict[str, int] = {}
     for device in active_devices:
         by_type[device.get("type", "unknown")] = by_type.get(device.get("type", "unknown"), 0) + 1
@@ -260,6 +317,120 @@ def status_summary(status: dict[str, Any]) -> dict[str, Any]:
             "by_type": by_type,
         },
         "wifi": wifi_summary(status),
+        "speed": {
+            "down_Bps": speed["totals"]["down_Bps"],
+            "up_Bps": speed["totals"]["up_Bps"],
+            "down_human": speed["totals"]["down_human"],
+            "up_human": speed["totals"]["up_human"],
+        },
+    }
+
+
+def device_rows(status: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for device in status.get("devices", []):
+        hostname = device.get("hostname") or device.get("name") or ""
+        down_speed = int(number_or_zero(device.get("down_speed")))
+        up_speed = int(number_or_zero(device.get("up_speed")))
+        usage = int(number_or_zero(device.get("traffic_usage")))
+        signal = device.get("signal")
+        rows.append(
+            {
+                "hostname": hostname,
+                "ip": device.get("_ipaddr") or device.get("ipaddr") or device.get("ip") or "",
+                "mac": device.get("_macaddr") or device.get("macaddr") or device.get("mac") or "",
+                "connection": device.get("type") or "unknown",
+                "active": bool(device.get("active")),
+                "down_Bps": down_speed,
+                "up_Bps": up_speed,
+                "down": human_rate(down_speed),
+                "up": human_rate(up_speed),
+                "usage_bytes": usage,
+                "usage": human_bytes(usage),
+                "signal_dbm": signal,
+                "rx_rate": device.get("rx_rate"),
+                "tx_rate": device.get("tx_rate"),
+                "online_seconds": device.get("online_time"),
+                "packets_received": device.get("packets_received"),
+                "packets_sent": device.get("packets_sent"),
+            }
+        )
+    return rows
+
+
+def filter_device_rows(rows: list[dict[str, Any]], args: argparse.Namespace) -> list[dict[str, Any]]:
+    filtered = rows
+    if getattr(args, "active", False):
+        filtered = [row for row in filtered if row["active"]]
+    if getattr(args, "connection", None):
+        filtered = [row for row in filtered if row["connection"] == args.connection.value]
+    if getattr(args, "name", None):
+        needle = args.name.lower()
+        filtered = [row for row in filtered if needle in row["hostname"].lower()]
+    if getattr(args, "ip", None):
+        filtered = [row for row in filtered if args.ip == row["ip"]]
+    if getattr(args, "mac", None):
+        needle = normalize_mac(args.mac)
+        filtered = [row for row in filtered if normalize_mac(row["mac"]) == needle]
+    sort_key = getattr(args, "sort", None)
+    if sort_key:
+        key_map = {
+            "name": lambda row: row["hostname"].lower(),
+            "ip": lambda row: tuple(int(part) if part.isdigit() else 999 for part in row["ip"].split(".")),
+            "speed": lambda row: row["down_Bps"] + row["up_Bps"],
+            "usage": lambda row: row["usage_bytes"],
+            "signal": lambda row: row["signal_dbm"] if row["signal_dbm"] is not None else -999,
+        }
+        filtered = sorted(filtered, key=key_map[sort_key], reverse=sort_key in {"speed", "usage", "signal"})
+    top = getattr(args, "top", None)
+    if top:
+        filtered = filtered[:top]
+    return filtered
+
+
+def normalize_mac(value: str) -> str:
+    return re.sub(r"[^0-9a-f]", "", value.lower())
+
+
+def match_device(row: dict[str, Any], query: str) -> bool:
+    needle = query.lower()
+    mac = normalize_mac(query)
+    return (
+        needle in row["hostname"].lower()
+        or needle == row["ip"].lower()
+        or (mac and mac == normalize_mac(row["mac"]))
+    )
+
+
+def speed_summary(rows: list[dict[str, Any]], top: int = 5) -> dict[str, Any]:
+    active = [row for row in rows if row["active"]]
+    total_down = sum(row["down_Bps"] for row in active)
+    total_up = sum(row["up_Bps"] for row in active)
+
+    def slim(row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "hostname": row["hostname"],
+            "ip": row["ip"],
+            "connection": row["connection"],
+            "down_Bps": row["down_Bps"],
+            "up_Bps": row["up_Bps"],
+            "down": row["down"],
+            "up": row["up"],
+            "usage_bytes": row["usage_bytes"],
+            "usage": row["usage"],
+        }
+
+    return {
+        "totals": {
+            "down_Bps": total_down,
+            "up_Bps": total_up,
+            "down_human": human_rate(total_down),
+            "up_human": human_rate(total_up),
+            "active_devices": len(active),
+        },
+        "top_download": [slim(row) for row in sorted(active, key=lambda row: row["down_Bps"], reverse=True)[:top]],
+        "top_upload": [slim(row) for row in sorted(active, key=lambda row: row["up_Bps"], reverse=True)[:top]],
+        "top_usage": [slim(row) for row in sorted(active, key=lambda row: row["usage_bytes"], reverse=True)[:top]],
     }
 
 
@@ -274,6 +445,67 @@ def wifi_summary(status: dict[str, Any]) -> dict[str, Any]:
         "iot_2g": status.get("iot_2g_enable"),
         "iot_5g": status.get("iot_5g_enable"),
         "iot_6g": status.get("iot_6g_enable"),
+    }
+
+
+def is_on(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if value in (None, ""):
+        return None
+    lowered = str(value).lower()
+    if lowered in {"on", "true", "1", "yes", "enabled"}:
+        return True
+    if lowered in {"off", "false", "0", "no", "disabled"}:
+        return False
+    return None
+
+
+def wifi_network_rows(raw: dict[str, Any]) -> list[dict[str, Any]]:
+    prefixes = sorted(
+        {
+            key.removesuffix("_ssid")
+            for key in raw
+            if key.endswith("_ssid") and raw.get(key) not in (None, "")
+        }
+    )
+    rows: list[dict[str, Any]] = []
+    for prefix in prefixes:
+        rows.append(
+            {
+                "network": prefix.replace("wireless_", "main_"),
+                "ssid": raw.get(f"{prefix}_ssid"),
+                "enabled": is_on(raw.get(f"{prefix}_enable")),
+                "hidden": is_on(raw.get(f"{prefix}_hidden")),
+                "channel": raw.get(f"{prefix}_current_channel") or raw.get(f"{prefix}_channel"),
+                "configured_channel": raw.get(f"{prefix}_channel"),
+                "width": raw.get(f"{prefix}_htmode"),
+                "txpower": raw.get(f"{prefix}_txpower"),
+                "security": raw.get(f"{prefix}_encryption"),
+                "mac": raw.get(f"{prefix}_macaddr"),
+            }
+        )
+    return rows
+
+
+def read_wifi_info(router) -> dict[str, Any]:
+    raw_sections: dict[str, dict[str, Any]] = {}
+    errors: dict[str, str] = {}
+    for name, (path, payload) in WIFI_ENDPOINTS.items():
+        try:
+            data = router.request(path, payload, ignore_errors=True)
+            raw_sections[name] = to_plain(data) if isinstance(data, dict) else {}
+        except Exception as exc:
+            errors[name] = f"{type(exc).__name__}: {exc}"
+    networks: list[dict[str, Any]] = []
+    for section in ("main", "guest", "iot"):
+        for row in wifi_network_rows(raw_sections.get(section, {})):
+            row["group"] = section
+            networks.append(row)
+    return {
+        "smart_connect": is_on(raw_sections.get("smart_connect", {}).get("smart_enable")),
+        "networks": networks,
+        "errors": errors,
     }
 
 
@@ -297,6 +529,21 @@ def health_from(status: dict[str, Any], firmware: dict[str, Any], ipv4: dict[str
         "firmware_version": firmware.get("firmware_version"),
         "summary": status_summary(status),
         "warnings": warnings,
+    }
+
+
+def wan_summary(status: dict[str, Any], ipv4: dict[str, Any]) -> dict[str, Any]:
+    wan_ip = status.get("_wan_ipv4_addr") or ipv4.get("_wan_ipv4_ipaddr")
+    return {
+        "wan_ip": wan_ip,
+        "wan_gateway": status.get("_wan_ipv4_gateway") or ipv4.get("_wan_ipv4_gateway"),
+        "wan_mac": status.get("_wan_macaddr") or ipv4.get("_wan_macaddr"),
+        "wan_uptime_seconds": status.get("wan_ipv4_uptime"),
+        "connection_type": status.get("conn_type") or ipv4.get("_wan_ipv4_conntype"),
+        "netmask": ipv4.get("_wan_ipv4_netmask"),
+        "primary_dns": ipv4.get("_wan_ipv4_pridns"),
+        "secondary_dns": ipv4.get("_wan_ipv4_snddns"),
+        "double_nat_likely": is_private_ip(wan_ip),
     }
 
 
@@ -415,7 +662,24 @@ def cmd_firmware(args: argparse.Namespace) -> None:
 
 
 def cmd_status(args: argparse.Namespace) -> None:
-    emit(args, with_session(args, lambda router: router.get_status()))
+    def action(router):
+        firmware = to_plain(router.get_firmware())
+        status = to_plain(router.get_status())
+        ipv4 = to_plain(router.get_ipv4_status())
+        wifi = read_wifi_info(router)
+        return {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "model": firmware.get("model"),
+            "hardware_version": firmware.get("hardware_version"),
+            "firmware_version": firmware.get("firmware_version"),
+            "router": status_summary(status),
+            "wan": wan_summary(status, ipv4),
+            "wifi": wifi,
+            "devices": device_rows(status),
+            "health": health_from(status, firmware, ipv4),
+        }
+
+    emit(args, with_session(args, action))
 
 
 def cmd_health(args: argparse.Namespace) -> None:
@@ -432,17 +696,7 @@ def cmd_wan(args: argparse.Namespace) -> None:
     def action(router):
         status = to_plain(router.get_status())
         ipv4 = to_plain(router.get_ipv4_status())
-        return {
-            "wan_ip": status.get("_wan_ipv4_addr") or ipv4.get("_wan_ipv4_ipaddr"),
-            "wan_gateway": status.get("_wan_ipv4_gateway") or ipv4.get("_wan_ipv4_gateway"),
-            "wan_mac": status.get("_wan_macaddr") or ipv4.get("_wan_macaddr"),
-            "wan_uptime_seconds": status.get("wan_ipv4_uptime"),
-            "connection_type": status.get("conn_type") or ipv4.get("_wan_ipv4_conntype"),
-            "netmask": ipv4.get("_wan_ipv4_netmask"),
-            "primary_dns": ipv4.get("_wan_ipv4_pridns"),
-            "secondary_dns": ipv4.get("_wan_ipv4_snddns"),
-            "double_nat_likely": is_private_ip(status.get("_wan_ipv4_addr") or ipv4.get("_wan_ipv4_ipaddr")),
-        }
+        return wan_summary(status, ipv4)
 
     emit(args, with_session(args, action))
 
@@ -463,15 +717,104 @@ def cmd_reservations(args: argparse.Namespace) -> None:
     emit(args, with_session(args, lambda router: router.get_ipv4_reservations()))
 
 
+def cmd_devices(args: argparse.Namespace) -> None:
+    def action(router):
+        status = to_plain(router.get_status())
+        return filter_device_rows(device_rows(status), args)
+
+    emit(args, with_session(args, action))
+
+
+def cmd_device(args: argparse.Namespace) -> None:
+    def action(router):
+        rows = device_rows(to_plain(router.get_status()))
+        matches = [row for row in rows if match_device(row, args.query)]
+        if not matches:
+            raise SystemExit(f"No device matched `{args.query}`.")
+        exact = [
+            row for row in matches
+            if args.query.lower() in {row["hostname"].lower(), row["ip"].lower()}
+            or normalize_mac(args.query) == normalize_mac(row["mac"])
+        ]
+        if len(exact) == 1:
+            return exact[0]
+        if len(matches) == 1:
+            return matches[0]
+        return matches
+
+    emit(args, with_session(args, action))
+
+
+def cmd_speed(args: argparse.Namespace) -> None:
+    def action(router):
+        rows = device_rows(to_plain(router.get_status()))
+        return speed_summary(rows, top=args.top)
+
+    emit(args, with_session(args, action))
+
+
+def timed_request(session: requests.Session, method: str, url: str, **kwargs: Any) -> tuple[requests.Response, float]:
+    started = time.perf_counter()
+    response = session.request(method, url, **kwargs)
+    elapsed = time.perf_counter() - started
+    response.raise_for_status()
+    return response, elapsed
+
+
+def cmd_speedtest(args: argparse.Namespace) -> None:
+    args = apply_runtime_defaults(args)
+    session = requests.Session()
+    result: dict[str, Any] = {
+        "provider": "Cloudflare speed test endpoints",
+        "download_bytes": args.download_bytes,
+        "upload_bytes": 0 if args.skip_upload else args.upload_bytes,
+    }
+    latency_url = "https://speed.cloudflare.com/cdn-cgi/trace"
+    _, latency_seconds = timed_request(session, "GET", latency_url, timeout=args.timeout)
+    result["latency_ms"] = round(latency_seconds * 1000, 2)
+
+    download_url = f"https://speed.cloudflare.com/__down?bytes={args.download_bytes}"
+    response, elapsed = timed_request(session, "GET", download_url, timeout=args.timeout, stream=True)
+    downloaded = 0
+    for chunk in response.iter_content(chunk_size=1024 * 256):
+        downloaded += len(chunk)
+    down_bps = downloaded / elapsed if elapsed else 0
+    result["download"] = {
+        "bytes": downloaded,
+        "seconds": round(elapsed, 3),
+        "Bps": round(down_bps, 2),
+        "Mbps": round(down_bps * 8 / 1_000_000, 2),
+    }
+
+    if not args.skip_upload:
+        upload_url = "https://speed.cloudflare.com/__up"
+        payload = os.urandom(args.upload_bytes)
+        _, elapsed = timed_request(session, "POST", upload_url, data=payload, timeout=args.timeout)
+        up_bps = args.upload_bytes / elapsed if elapsed else 0
+        result["upload"] = {
+            "bytes": args.upload_bytes,
+            "seconds": round(elapsed, 3),
+            "Bps": round(up_bps, 2),
+            "Mbps": round(up_bps * 8 / 1_000_000, 2),
+        }
+
+    emit(args, result)
+
+
+def cmd_wifi_info(args: argparse.Namespace) -> None:
+    def action(router):
+        info = read_wifi_info(router)
+        if args.group:
+            info["networks"] = [row for row in info["networks"] if row["group"] == args.group]
+        return info
+
+    emit(args, with_session(args, action))
+
+
 def cmd_clients(args: argparse.Namespace) -> None:
     def action(router):
         status = to_plain(router.get_status())
-        devices = status.get("devices", [])
-        if args.active:
-            devices = [device for device in devices if device.get("active")]
-        if args.connection:
-            devices = [device for device in devices if device.get("type") == args.connection.value]
-        return devices
+        return filter_device_rows(device_rows(status), args)
 
     emit(args, with_session(args, action))
 
@@ -662,7 +1005,7 @@ def add_simple_commands(subparsers: argparse._SubParsersAction[argparse.Argument
     commands = {
         "firmware": (cmd_firmware, "show firmware and model info"),
         "health": (cmd_health, "summarize router health and likely issues"),
-        "status": (cmd_status, "show router, WAN, Wi-Fi, and client status"),
+        "status": (cmd_status, "show router, WAN, Wi-Fi, speed, and device status"),
         "snapshot": (cmd_snapshot, "collect a broad read-only router snapshot"),
         "wan": (cmd_wan, "show WAN summary"),
         "wifi-status": (cmd_wifi_status, "show Wi-Fi network enablement"),
@@ -676,6 +1019,16 @@ def add_simple_commands(subparsers: argparse._SubParsersAction[argparse.Argument
     for name, (func, help_text) in commands.items():
         subparser = subparsers.add_parser(name, help=help_text)
         subparser.set_defaults(func=func)
+
+
+def add_device_filters(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--active", action="store_true", help="show only active devices")
+    parser.add_argument("--connection", type=connection_arg, help="filter by connection, e.g. host_5g")
+    parser.add_argument("--name", help="filter by hostname substring")
+    parser.add_argument("--ip", help="filter by IP address")
+    parser.add_argument("--mac", help="filter by MAC address")
+    parser.add_argument("--sort", choices=["name", "ip", "speed", "usage", "signal"], default="name")
+    parser.add_argument("--top", type=int, help="limit rows after filtering and sorting")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -693,9 +1046,30 @@ def build_parser() -> argparse.ArgumentParser:
     wifi.add_argument("enabled", type=bool_arg, help="on/off")
     wifi.set_defaults(func=cmd_wifi)
 
-    clients = subparsers.add_parser("clients", help="list connected clients from status")
-    clients.add_argument("--active", action="store_true", help="show only active clients")
-    clients.add_argument("--connection", type=connection_arg, help="filter by connection, e.g. host_5g")
+    wifi_info = subparsers.add_parser("wifi-info", help="list Wi-Fi SSIDs, bands, channels, and enabled state")
+    wifi_info.add_argument("--group", choices=["main", "guest", "iot"], help="filter network group")
+    wifi_info.set_defaults(func=cmd_wifi_info)
+
+    devices = subparsers.add_parser("devices", help="list connected devices with IP, speed, signal, and usage")
+    add_device_filters(devices)
+    devices.set_defaults(func=cmd_devices)
+
+    device = subparsers.add_parser("device", help="show one device by hostname, IP, or MAC")
+    device.add_argument("query", help="hostname substring, IP address, or MAC address")
+    device.set_defaults(func=cmd_device)
+
+    speed = subparsers.add_parser("speed", help="show current router throughput and top devices")
+    speed.add_argument("--top", type=int, default=5, help="number of top devices to show")
+    speed.set_defaults(func=cmd_speed)
+
+    speedtest = subparsers.add_parser("speedtest", help="run a small external internet speed test")
+    speedtest.add_argument("--download-bytes", type=int, default=10_000_000, help="download test size")
+    speedtest.add_argument("--upload-bytes", type=int, default=2_000_000, help="upload test size")
+    speedtest.add_argument("--skip-upload", action="store_true", help="only test latency and download")
+    speedtest.set_defaults(func=cmd_speedtest)
+
+    clients = subparsers.add_parser("clients", help="alias of devices; list connected clients from status")
+    add_device_filters(clients)
     clients.set_defaults(func=cmd_clients)
 
     vpn = subparsers.add_parser("vpn", help="enable or disable a VPN server")

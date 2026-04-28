@@ -30,11 +30,14 @@ export TPLINK_PASSWORD='your-local-router-password'
 
 tplinkctl doctor
 tplinkctl --json health
-tplinkctl --json wan
-tplinkctl --json wifi-status
-tplinkctl --json firmware
 tplinkctl --json status
-tplinkctl clients --active
+tplinkctl devices --active
+tplinkctl device Pixel
+tplinkctl speed
+tplinkctl wifi-info
+tplinkctl speedtest --skip-upload
+tplinkctl --json wan
+tplinkctl --json firmware
 ```
 
 Prefer `TPLINK_PASSWORD` or the interactive password prompt over `--password`, so the password is not left in shell history.
@@ -47,12 +50,18 @@ tplinkctl health
 tplinkctl status
 tplinkctl snapshot
 tplinkctl wan
+tplinkctl devices --active --sort usage
+tplinkctl devices --connection host_5g --sort signal
+tplinkctl device 192.168.0.40
+tplinkctl speed --top 10
+tplinkctl speedtest
+tplinkctl wifi-info
+tplinkctl wifi-info --group guest
 tplinkctl wifi-status
 tplinkctl ipv4
 tplinkctl leases
 tplinkctl reservations
 tplinkctl clients --active
-tplinkctl clients --connection host_5g
 tplinkctl wifi guest_2g on
 tplinkctl wifi guest_2g off
 tplinkctl vpn-status
@@ -87,8 +96,8 @@ Data goes to stdout. Use `--json` for machine-readable output and `--no-input` w
 
 ```bash
 tplinkctl --json --no-input health
-tplinkctl --json --no-input status | jq '.devices[] | {hostname, ipaddr, type, active}'
-tplinkctl --json --enable-commands status,clients clients --active
+tplinkctl --json --no-input status | jq '.router, .wan, .wifi.networks, .devices[] | {hostname, ip, connection, active, down, up, usage}'
+tplinkctl --json --enable-commands status,devices devices --active
 tplinkctl --disable-commands reboot,wifi status
 ```
 

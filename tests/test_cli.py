@@ -55,7 +55,10 @@ class FakeRouter:
                     "_ipaddr": "192.168.0.79",
                     "_macaddr": "48-BA-4E-40-B4-F4",
                     "active": True,
+                    "down_speed": 1024,
                     "type": "wired",
+                    "traffic_usage": 2048,
+                    "up_speed": 512,
                 }
             ],
         }
@@ -81,6 +84,22 @@ class FakeRouter:
     def get_vpn_client_status(self):
         return {"enabled": False}
 
+    def request(self, path, data="", **kwargs):
+        if path == "admin/wireless?form=smart_connect":
+            return {"smart_enable": "on"}
+        if "wireless_2g" in path:
+            return {
+                "wireless_2g_enable": "on",
+                "wireless_2g_ssid": "lab",
+                "wireless_2g_current_channel": "3",
+                "wireless_2g_psk_key": "secret",
+            }
+        if "guest_2g" in path:
+            return {"guest_2g_enable": "off", "guest_2g_ssid": "lab_guest"}
+        if "iot_2g" in path:
+            return {"iot_2g_enable": "on", "iot_2g_ssid": "lab_iot"}
+        return {}
+
 
 def run_cli(argv):
     out = io.StringIO()
@@ -100,6 +119,25 @@ class CliTests(unittest.TestCase):
         output = run_cli(["--json", "--no-input", "clients", "--active"])
         data = json.loads(output)
         self.assertEqual(data[0]["hostname"], "debian_linux")
+        self.assertEqual(data[0]["ip"], "192.168.0.79")
+
+    def test_device_lookup_outputs_detail(self):
+        output = run_cli(["--json", "--no-input", "device", "debian"])
+        data = json.loads(output)
+        self.assertEqual(data["mac"], "48-BA-4E-40-B4-F4")
+
+    def test_speed_summarizes_throughput(self):
+        output = run_cli(["--json", "--no-input", "speed"])
+        data = json.loads(output)
+        self.assertEqual(data["totals"]["down_Bps"], 1024)
+        self.assertEqual(data["totals"]["up_Bps"], 512)
+
+    def test_wifi_info_redacts_password_fields(self):
+        output = run_cli(["--json", "--no-input", "wifi-info"])
+        data = json.loads(output)
+        self.assertTrue(data["smart_connect"])
+        self.assertEqual(data["networks"][0]["ssid"], "lab")
+        self.assertNotIn("psk_key", data["networks"][0])
 
     def test_denylist_blocks_command(self):
         with self.assertRaises(SystemExit) as raised:
