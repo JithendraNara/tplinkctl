@@ -145,6 +145,20 @@ class FakeRouter:
         if base_path == cli.ACCESS_WHITE_LIST:
             if data == "operation=load":
                 return {"data": []}
+        if base_path == cli.ACCESS_BLACK_DEVICES:
+            if data == "operation=load":
+                return {
+                    "data": [
+                        {
+                            "name": "debian_linux",
+                            "type": "Computer",
+                            "mac": "48-BA-4E-40-B4-F4",
+                            "ipaddr": "192.168.0.79",
+                            "host": "NON_HOST",
+                            "conn_type": "wired",
+                        }
+                    ]
+                }
         if base_path == "admin/vpn?form=vpn_user_list":
             if data == "operation=load":
                 return {"data": [{"name": "debian_linux", "mac": "48-BA-4E-40-B4-F4", "access": self.vpn_access}]}

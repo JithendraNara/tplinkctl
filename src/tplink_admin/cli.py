@@ -20,7 +20,7 @@ from contextlib import contextmanager
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote, urlencode, urljoin
+from urllib.parse import parse_qsl, quote, urlencode, urljoin
 
 from . import __version__
 
@@ -81,6 +81,8 @@ ACCESS_CONTROL_ENABLE = "admin/access_control?form=enable"
 ACCESS_CONTROL_MODE = "admin/access_control?form=mode"
 ACCESS_BLACK_LIST = "admin/access_control?form=black_list"
 ACCESS_WHITE_LIST = "admin/access_control?form=white_list"
+ACCESS_BLACK_DEVICES = "admin/access_control?form=black_devices"
+ACCESS_WHITE_DEVICES = "admin/access_control?form=white_devices"
 DHCP_RESERVATION = "admin/dhcps?form=reservation"
 
 
@@ -308,6 +310,13 @@ def api_request(
     if not all(hasattr(router, name) for name in ("_aes_encrypt", "_aes_decrypt", "_build_request_signature")):
         return router.request(path, data, ignore_response=ignore_response, ignore_errors=ignore_errors)
 
+    if isinstance(data, str) and "=" in data:
+        parsed = dict(parse_qsl(data))
+        for key, value in parsed.items():
+            if f"{key}=" not in path:
+                path += f"&{key}={quote(str(value))}"
+        data = json.dumps(parsed)
+
     encrypted_data = router._aes_encrypt(data)
     router._hash = sha256(encrypted_data.encode()).hexdigest()
     sign = router._build_request_signature(len(encrypted_data))
@@ -491,6 +500,14 @@ def form_payload(**items: Any) -> str:
     return urlencode({key: value for key, value in items.items() if value not in (None, "")})
 
 
+def compact_json(value: Any) -> str:
+    return json.dumps(value, separators=(",", ":"))
+
+
+def insert_payload(new: dict[str, Any], index: int = 0) -> str:
+    return urlencode({"operation": "insert", "new": compact_json(new), "index": index})
+
+
 def require_yes(args: argparse.Namespace, action: str) -> None:
     if not getattr(args, "yes", False):
         raise SystemExit(f"Refusing to {action} without --yes.")
@@ -532,7 +549,8 @@ def device_access_payload(row: dict[str, Any]) -> dict[str, Any]:
         "ipaddr": row["ip"],
         "deviceType": row["connection"],
         "conn_type": row["connection"],
-        "host": "NOT HOST",
+        "host": "NON_HOST",
+        "key": normalize_mac(row["mac"]),
     }
 
 
@@ -553,6 +571,20 @@ def access_control_status(router) -> dict[str, Any]:
         "mode": mode.get("access_mode") if isinstance(mode, dict) else None,
         "blacklist": load_collection(router, ACCESS_BLACK_LIST),
         "whitelist": load_collection(router, ACCESS_WHITE_LIST),
+    }
+
+
+def access_device_payload(router, row: dict[str, Any], list_path: str) -> dict[str, Any]:
+    candidates = load_collection(router, list_path)
+    match = next((item for item in candidates if normalize_mac(str(item.get("mac") or "")) == normalize_mac(row["mac"])), {})
+    return {
+        "name": match.get("name") or row["hostname"] or row["mac"],
+        "deviceType": match.get("deviceType") or match.get("type") or row["connection"],
+        "mac": match.get("mac") or row["mac"],
+        "ipaddr": match.get("ipaddr") or row["ip"],
+        "host": match.get("host") or "NON_HOST",
+        "conn_type": match.get("conn_type") or match.get("connType") or row["connection"],
+        "key": match.get("key") or normalize_mac(row["mac"]),
     }
 
 
@@ -934,9 +966,9 @@ def cmd_device_reserve(args: argparse.Namespace) -> None:
         payload = reservation_payload(row, ip=args.ip, name=args.name)
         api_request(
             router,
-            operation_path(DHCP_RESERVATION, "insert"),
-            form_payload(operation="insert", index=0, **payload),
-            ignore_response=True,
+            DHCP_RESERVATION,
+            insert_payload(payload),
+            ignore_errors=True,
         )
         refreshed = load_collection(router, DHCP_RESERVATION)
         if not contains_mac(refreshed, row["mac"]):
@@ -954,9 +986,9 @@ def cmd_device_release(args: argparse.Namespace) -> None:
         index, item = find_list_item(reservations, args.query)
         api_request(
             router,
-            operation_path(DHCP_RESERVATION, "remove"),
-            form_payload(operation="remove", index=index, key=item.get("key")),
-            ignore_response=True,
+            DHCP_RESERVATION,
+            form_payload(operation="remove", index=index, key=item.get("key") or item.get("mac")),
+            ignore_errors=True,
         )
         refreshed = load_collection(router, DHCP_RESERVATION)
         if contains_mac(refreshed, str(item.get("mac") or "")):
@@ -971,15 +1003,15 @@ def cmd_device_block(args: argparse.Namespace) -> None:
 
     def action(router):
         row = load_device(router, args.query)
-        payload = device_access_payload(row)
+        payload = access_device_payload(router, row, ACCESS_BLACK_DEVICES)
         existing = load_collection(router, ACCESS_BLACK_LIST)
         duplicate = next((item for item in existing if normalize_mac(str(item.get("mac") or "")) == normalize_mac(row["mac"])), None)
         if not duplicate:
             api_request(
                 router,
-                operation_path(ACCESS_BLACK_LIST, "insert"),
-                form_payload(operation="insert", index=0, **payload),
-                ignore_response=True,
+                ACCESS_BLACK_LIST,
+                insert_payload(payload),
+                ignore_errors=True,
             )
         if args.enforce:
             api_request(router, operation_path(ACCESS_CONTROL_ENABLE, "write"), form_payload(operation="write", enable="on"), ignore_response=True)
@@ -1011,9 +1043,9 @@ def cmd_device_unblock(args: argparse.Namespace) -> None:
         index, item = find_list_item(blacklist, args.query)
         api_request(
             router,
-            operation_path(ACCESS_BLACK_LIST, "remove"),
-            form_payload(operation="remove", index=index, key=item.get("key")),
-            ignore_response=True,
+            ACCESS_BLACK_LIST,
+            form_payload(operation="remove", index=index, key=item.get("key") or item.get(".name") or item.get("mac")),
+            ignore_errors=True,
         )
         refreshed = load_collection(router, ACCESS_BLACK_LIST)
         if contains_mac(refreshed, str(item.get("mac") or "")):
