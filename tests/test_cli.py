@@ -23,6 +23,7 @@ class FakeRouter:
         self.blacklist = []
         self.access_enabled = "off"
         self.access_mode = "black"
+        self.vpn_access = "off"
 
     def authorize(self):
         self.authorized = True
@@ -95,7 +96,8 @@ class FakeRouter:
 
     def request(self, path, data="", **kwargs):
         self.requests.append((path, data, kwargs))
-        if path == cli.DHCP_RESERVATION:
+        base_path = path.split("&operation=", 1)[0]
+        if base_path == cli.DHCP_RESERVATION:
             if data == "operation=load":
                 return {"data": self.reservations}
             if "operation=insert" in data:
@@ -108,23 +110,23 @@ class FakeRouter:
                         "enable": "on",
                     }
                 )
-                return {}
+                return None if kwargs.get("ignore_response") else {}
             if "operation=remove" in data:
                 self.reservations.clear()
-                return {}
-        if path == cli.ACCESS_CONTROL_ENABLE:
+                return None if kwargs.get("ignore_response") else {}
+        if base_path == cli.ACCESS_CONTROL_ENABLE:
             if data == "operation=read":
                 return {"enable": self.access_enabled}
             if "operation=write" in data:
                 self.access_enabled = "on" if "enable=on" in data else "off"
-                return {}
-        if path == cli.ACCESS_CONTROL_MODE:
+                return None if kwargs.get("ignore_response") else {}
+        if base_path == cli.ACCESS_CONTROL_MODE:
             if data == "operation=read":
                 return {"access_mode": self.access_mode}
             if "operation=write" in data:
                 self.access_mode = "white" if "access_mode=white" in data else "black"
-                return {}
-        if path == cli.ACCESS_BLACK_LIST:
+                return None if kwargs.get("ignore_response") else {}
+        if base_path == cli.ACCESS_BLACK_LIST:
             if data == "operation=load":
                 return {"data": self.blacklist}
             if "operation=insert" in data:
@@ -136,13 +138,21 @@ class FakeRouter:
                         "mac": "48-BA-4E-40-B4-F4",
                     }
                 )
-                return {}
+                return None if kwargs.get("ignore_response") else {}
             if "operation=remove" in data:
                 self.blacklist.clear()
-                return {}
-        if path == cli.ACCESS_WHITE_LIST:
+                return None if kwargs.get("ignore_response") else {}
+        if base_path == cli.ACCESS_WHITE_LIST:
             if data == "operation=load":
                 return {"data": []}
+        if base_path == "admin/vpn?form=vpn_user_list":
+            if data == "operation=load":
+                return {"data": [{"name": "debian_linux", "mac": "48-BA-4E-40-B4-F4", "access": self.vpn_access}]}
+            if "operation=update" in data:
+                enabled = "access%22%3A+%22on" in data or "access%22%3A%22on" in data
+                self.vpn_access = "on" if enabled else "off"
+                self.vpn_devices.append(("48-BA-4E-40-B4-F4", enabled))
+                return None if kwargs.get("ignore_response") else {}
         if path == "admin/wireless?form=smart_connect":
             return {"smart_enable": "on"}
         if "wireless_2g" in path:

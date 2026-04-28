@@ -7,6 +7,7 @@ import dataclasses
 import enum
 import fcntl
 import getpass
+from hashlib import sha256
 import ipaddress
 import json
 import os
@@ -19,7 +20,7 @@ from contextlib import contextmanager
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode, urljoin
+from urllib.parse import quote, urlencode, urljoin
 
 from . import __version__
 
@@ -289,6 +290,59 @@ def safe_call(label: str, func) -> dict[str, Any]:
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
+def operation_path(path: str, operation: str) -> str:
+    if "operation=" in path:
+        return path
+    separator = "&" if "?" in path else "?"
+    return f"{path}{separator}operation={operation}"
+
+
+def api_request(
+    router,
+    path: str,
+    data: str,
+    *,
+    ignore_response: bool = False,
+    ignore_errors: bool = False,
+) -> Any:
+    if not all(hasattr(router, name) for name in ("_aes_encrypt", "_aes_decrypt", "_build_request_signature")):
+        return router.request(path, data, ignore_response=ignore_response, ignore_errors=ignore_errors)
+
+    encrypted_data = router._aes_encrypt(data)
+    router._hash = sha256(encrypted_data.encode()).hexdigest()
+    sign = router._build_request_signature(len(encrypted_data))
+    url = f"{router.host}/cgi-bin/luci/;stok={router._stok}/{path}"
+    body = f"sign={sign}&data={quote(encrypted_data)}"
+    response = requests.post(
+        url,
+        data=body,
+        headers=router._headers_request,
+        cookies={"sysauth": router._sysauth},
+        timeout=router.timeout,
+        verify=router._verify_ssl,
+    )
+    if ignore_response:
+        return None
+
+    try:
+        raw = response.json().get("data", "")
+    except ValueError:
+        raw = response.text
+    try:
+        decrypted_text = router._aes_decrypt(raw)
+        decrypted = json.loads(decrypted_text)
+    except Exception as exc:
+        detail = decrypted_text.strip() if "decrypted_text" in locals() else str(exc)
+        raise SystemExit(f"Router returned an unreadable response for `{path}`: {detail}") from exc
+
+    data_block = getattr(router, "_data_block", "data")
+    if isinstance(decrypted, dict) and decrypted.get("success") and data_block in decrypted:
+        return decrypted[data_block]
+    if ignore_errors:
+        return decrypted
+    raise SystemExit(f"Router returned an error for `{path}`: {decrypted}")
+
+
 def is_private_ip(value: str | None) -> bool:
     if not value:
         return False
@@ -443,7 +497,7 @@ def require_yes(args: argparse.Namespace, action: str) -> None:
 
 
 def load_collection(router, path: str) -> list[dict[str, Any]]:
-    response = to_plain(router.request(path, "operation=load", ignore_errors=True))
+    response = to_plain(api_request(router, operation_path(path, "load"), "operation=load", ignore_errors=True))
     if isinstance(response, dict) and isinstance(response.get("data"), list):
         return response["data"]
     if isinstance(response, dict) and isinstance(response.get("data"), dict) and isinstance(response["data"].get("data"), list):
@@ -492,14 +546,19 @@ def reservation_payload(row: dict[str, Any], ip: str | None = None, name: str | 
 
 
 def access_control_status(router) -> dict[str, Any]:
-    enable = to_plain(router.request(ACCESS_CONTROL_ENABLE, "operation=read", ignore_errors=True))
-    mode = to_plain(router.request(ACCESS_CONTROL_MODE, "operation=read", ignore_errors=True))
+    enable = to_plain(api_request(router, operation_path(ACCESS_CONTROL_ENABLE, "read"), "operation=read", ignore_errors=True))
+    mode = to_plain(api_request(router, operation_path(ACCESS_CONTROL_MODE, "read"), "operation=read", ignore_errors=True))
     return {
         "enabled": is_on(enable.get("enable") if isinstance(enable, dict) else None),
         "mode": mode.get("access_mode") if isinstance(mode, dict) else None,
         "blacklist": load_collection(router, ACCESS_BLACK_LIST),
         "whitelist": load_collection(router, ACCESS_WHITE_LIST),
     }
+
+
+def contains_mac(items: list[dict[str, Any]], mac: str) -> bool:
+    normalized = normalize_mac(mac)
+    return any(normalize_mac(str(item.get("mac") or item.get("macaddr") or "")) == normalized for item in items)
 
 
 def speed_summary(rows: list[dict[str, Any]], top: int = 5) -> dict[str, Any]:
@@ -838,10 +897,26 @@ def cmd_device_access(args: argparse.Namespace) -> None:
         if args.access_state == "status":
             return access_control_status(router)
         require_yes(args, f"turn access control {args.access_state}")
-        router.request(ACCESS_CONTROL_ENABLE, form_payload(operation="write", enable=on_off(args.access_state == "on")), ignore_errors=True)
+        expected = args.access_state == "on"
+        api_request(
+            router,
+            operation_path(ACCESS_CONTROL_ENABLE, "write"),
+            form_payload(operation="write", enable=on_off(expected)),
+            ignore_response=True,
+        )
         if args.mode:
-            router.request(ACCESS_CONTROL_MODE, form_payload(operation="write", access_mode=args.mode), ignore_errors=True)
-        return access_control_status(router)
+            api_request(
+                router,
+                operation_path(ACCESS_CONTROL_MODE, "write"),
+                form_payload(operation="write", access_mode=args.mode),
+                ignore_response=True,
+            )
+        status = access_control_status(router)
+        if status["enabled"] is not expected:
+            raise SystemExit(f"Router did not confirm access control {args.access_state}; current status is {status}.")
+        if args.mode and status["mode"] != args.mode:
+            raise SystemExit(f"Router did not confirm access-control mode `{args.mode}`; current status is {status}.")
+        return status
 
     emit(args, with_session(args, action))
 
@@ -857,7 +932,15 @@ def cmd_device_reserve(args: argparse.Namespace) -> None:
         if duplicate:
             return {"created": False, "reason": "reservation already exists", "reservation": duplicate, "device": row}
         payload = reservation_payload(row, ip=args.ip, name=args.name)
-        router.request(DHCP_RESERVATION, form_payload(operation="insert", index=0, **payload), ignore_errors=True)
+        api_request(
+            router,
+            operation_path(DHCP_RESERVATION, "insert"),
+            form_payload(operation="insert", index=0, **payload),
+            ignore_response=True,
+        )
+        refreshed = load_collection(router, DHCP_RESERVATION)
+        if not contains_mac(refreshed, row["mac"]):
+            raise SystemExit("Router did not confirm the DHCP reservation; no reservation was left behind.")
         return {"created": True, "reservation": payload, "device": row}
 
     emit(args, with_session(args, action))
@@ -869,7 +952,15 @@ def cmd_device_release(args: argparse.Namespace) -> None:
     def action(router):
         reservations = load_collection(router, DHCP_RESERVATION)
         index, item = find_list_item(reservations, args.query)
-        router.request(DHCP_RESERVATION, form_payload(operation="remove", index=index, key=item.get("key")), ignore_errors=True)
+        api_request(
+            router,
+            operation_path(DHCP_RESERVATION, "remove"),
+            form_payload(operation="remove", index=index, key=item.get("key")),
+            ignore_response=True,
+        )
+        refreshed = load_collection(router, DHCP_RESERVATION)
+        if contains_mac(refreshed, str(item.get("mac") or "")):
+            raise SystemExit("Router did not confirm reservation removal.")
         return {"removed": True, "reservation": item}
 
     emit(args, with_session(args, action))
@@ -884,11 +975,19 @@ def cmd_device_block(args: argparse.Namespace) -> None:
         existing = load_collection(router, ACCESS_BLACK_LIST)
         duplicate = next((item for item in existing if normalize_mac(str(item.get("mac") or "")) == normalize_mac(row["mac"])), None)
         if not duplicate:
-            router.request(ACCESS_BLACK_LIST, form_payload(operation="insert", index=0, **payload), ignore_errors=True)
+            api_request(
+                router,
+                operation_path(ACCESS_BLACK_LIST, "insert"),
+                form_payload(operation="insert", index=0, **payload),
+                ignore_response=True,
+            )
         if args.enforce:
-            router.request(ACCESS_CONTROL_ENABLE, form_payload(operation="write", enable="on"), ignore_errors=True)
-            router.request(ACCESS_CONTROL_MODE, form_payload(operation="write", access_mode="black"), ignore_errors=True)
+            api_request(router, operation_path(ACCESS_CONTROL_ENABLE, "write"), form_payload(operation="write", enable="on"), ignore_response=True)
+            api_request(router, operation_path(ACCESS_CONTROL_MODE, "write"), form_payload(operation="write", access_mode="black"), ignore_response=True)
         status = access_control_status(router)
+        refreshed_duplicate = contains_mac(status["blacklist"], row["mac"])
+        if not duplicate and not refreshed_duplicate:
+            raise SystemExit("Router did not confirm adding the device to the blacklist.")
         return {
             "blocked": True,
             "already_listed": duplicate is not None,
@@ -910,7 +1009,15 @@ def cmd_device_unblock(args: argparse.Namespace) -> None:
     def action(router):
         blacklist = load_collection(router, ACCESS_BLACK_LIST)
         index, item = find_list_item(blacklist, args.query)
-        router.request(ACCESS_BLACK_LIST, form_payload(operation="remove", index=index, key=item.get("key")), ignore_errors=True)
+        api_request(
+            router,
+            operation_path(ACCESS_BLACK_LIST, "remove"),
+            form_payload(operation="remove", index=index, key=item.get("key")),
+            ignore_response=True,
+        )
+        refreshed = load_collection(router, ACCESS_BLACK_LIST)
+        if contains_mac(refreshed, str(item.get("mac") or "")):
+            raise SystemExit("Router did not confirm removing the device from the blacklist.")
         return {"unblocked": True, "device": item}
 
     emit(args, with_session(args, action))
@@ -921,7 +1028,23 @@ def cmd_device_vpn(args: argparse.Namespace) -> None:
 
     def action(router):
         row = load_device(router, args.query)
-        router.set_vpn_client_device(row["mac"], args.enabled)
+        devices = load_collection(router, "admin/vpn?form=vpn_user_list")
+        target = next((item for item in devices if normalize_mac(str(item.get("mac") or "")) == normalize_mac(row["mac"])), None)
+        if target is None:
+            raise SystemExit(f"Device `{row['hostname']}` was not found in the VPN client device list.")
+        old = dict(target)
+        new = dict(target)
+        new["access"] = on_off(args.enabled)
+        api_request(
+            router,
+            operation_path("admin/vpn?form=vpn_user_list", "update"),
+            urlencode({"operation": "update", "key": target["mac"], "new": json.dumps(new), "old": json.dumps(old)}),
+            ignore_response=True,
+        )
+        refreshed = load_collection(router, "admin/vpn?form=vpn_user_list")
+        updated = next((item for item in refreshed if normalize_mac(str(item.get("mac") or "")) == normalize_mac(row["mac"])), {})
+        if is_on(updated.get("access")) is not args.enabled:
+            raise SystemExit("Router did not confirm the VPN client device change.")
         return {"device": row, "vpn_client": args.enabled}
 
     emit(args, with_session(args, action))
