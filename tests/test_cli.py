@@ -11,9 +11,18 @@ from tplink_admin import cli
 
 
 class FakeRouter:
+    last = None
+
     def __init__(self):
+        FakeRouter.last = self
         self.authorized = False
         self.logged_out = False
+        self.requests = []
+        self.vpn_devices = []
+        self.reservations = []
+        self.blacklist = []
+        self.access_enabled = "off"
+        self.access_mode = "black"
 
     def authorize(self):
         self.authorized = True
@@ -85,6 +94,55 @@ class FakeRouter:
         return {"enabled": False}
 
     def request(self, path, data="", **kwargs):
+        self.requests.append((path, data, kwargs))
+        if path == cli.DHCP_RESERVATION:
+            if data == "operation=load":
+                return {"data": self.reservations}
+            if "operation=insert" in data:
+                self.reservations.append(
+                    {
+                        "key": "reservation-1",
+                        "hostname": "debian_linux",
+                        "ip": "192.168.0.79",
+                        "mac": "48-BA-4E-40-B4-F4",
+                        "enable": "on",
+                    }
+                )
+                return {}
+            if "operation=remove" in data:
+                self.reservations.clear()
+                return {}
+        if path == cli.ACCESS_CONTROL_ENABLE:
+            if data == "operation=read":
+                return {"enable": self.access_enabled}
+            if "operation=write" in data:
+                self.access_enabled = "on" if "enable=on" in data else "off"
+                return {}
+        if path == cli.ACCESS_CONTROL_MODE:
+            if data == "operation=read":
+                return {"access_mode": self.access_mode}
+            if "operation=write" in data:
+                self.access_mode = "white" if "access_mode=white" in data else "black"
+                return {}
+        if path == cli.ACCESS_BLACK_LIST:
+            if data == "operation=load":
+                return {"data": self.blacklist}
+            if "operation=insert" in data:
+                self.blacklist.append(
+                    {
+                        "key": "block-1",
+                        "name": "debian_linux",
+                        "ipaddr": "192.168.0.79",
+                        "mac": "48-BA-4E-40-B4-F4",
+                    }
+                )
+                return {}
+            if "operation=remove" in data:
+                self.blacklist.clear()
+                return {}
+        if path == cli.ACCESS_WHITE_LIST:
+            if data == "operation=load":
+                return {"data": []}
         if path == "admin/wireless?form=smart_connect":
             return {"smart_enable": "on"}
         if "wireless_2g" in path:
@@ -100,11 +158,19 @@ class FakeRouter:
             return {"iot_2g_enable": "on", "iot_2g_ssid": "lab_iot"}
         return {}
 
+    def set_vpn_client_device(self, mac, enable):
+        self.vpn_devices.append((mac, enable))
+
 
 def run_cli(argv):
     out = io.StringIO()
-    with contextlib.redirect_stdout(out), patch.object(cli, "build_router", return_value=FakeRouter()):
-        cli.main(argv)
+    with tempfile.TemporaryDirectory() as tmp:
+        with (
+            contextlib.redirect_stdout(out),
+            patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp}, clear=False),
+            patch.object(cli, "build_router", return_value=FakeRouter()),
+        ):
+            cli.main(argv)
     return out.getvalue()
 
 
@@ -125,6 +191,45 @@ class CliTests(unittest.TestCase):
         output = run_cli(["--json", "--no-input", "device", "debian"])
         data = json.loads(output)
         self.assertEqual(data["mac"], "48-BA-4E-40-B4-F4")
+
+    def test_device_reserve_requires_confirmation(self):
+        with self.assertRaises(SystemExit) as raised:
+            run_cli(["--json", "--no-input", "device", "reserve", "debian"])
+        self.assertIn("--yes", str(raised.exception))
+
+    def test_device_reserve_creates_dhcp_reservation(self):
+        output = run_cli(["--json", "--no-input", "device", "reserve", "debian", "--yes"])
+        data = json.loads(output)
+        self.assertTrue(data["created"])
+        self.assertEqual(data["reservation"]["ip"], "192.168.0.79")
+
+    def test_device_block_can_enforce_blacklist_mode(self):
+        output = run_cli(["--json", "--no-input", "device", "block", "debian", "--yes", "--enforce"])
+        data = json.loads(output)
+        self.assertTrue(data["blocked"])
+        self.assertTrue(data["enforced"])
+        self.assertEqual(data["access_control"]["mode"], "black")
+
+    def test_device_unblock_removes_blacklist_entry(self):
+        router = FakeRouter()
+        router.blacklist.append({"key": "block-1", "name": "debian_linux", "ipaddr": "192.168.0.79", "mac": "48-BA-4E-40-B4-F4"})
+        with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp}, clear=False), patch.object(cli, "build_router", return_value=router):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                cli.main(["--json", "--no-input", "device", "unblock", "48-BA-4E-40-B4-F4", "--yes"])
+        data = json.loads(out.getvalue())
+        self.assertTrue(data["unblocked"])
+        self.assertEqual(router.blacklist, [])
+
+    def test_device_vpn_sets_client_device(self):
+        router = FakeRouter()
+        with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp}, clear=False), patch.object(cli, "build_router", return_value=router):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                cli.main(["--json", "--no-input", "device", "vpn", "debian", "on", "--yes"])
+        data = json.loads(out.getvalue())
+        self.assertTrue(data["vpn_client"])
+        self.assertEqual(router.vpn_devices, [("48-BA-4E-40-B4-F4", True)])
 
     def test_speed_summarizes_throughput(self):
         output = run_cli(["--json", "--no-input", "speed"])

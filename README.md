@@ -33,6 +33,8 @@ tplinkctl --json health
 tplinkctl --json status
 tplinkctl devices --active
 tplinkctl device Pixel
+tplinkctl device reserve Pixel --yes
+tplinkctl device block Pixel --yes --enforce
 tplinkctl speed
 tplinkctl wifi-info
 tplinkctl speedtest --skip-upload
@@ -53,6 +55,14 @@ tplinkctl wan
 tplinkctl devices --active --sort usage
 tplinkctl devices --connection host_5g --sort signal
 tplinkctl device 192.168.0.40
+tplinkctl device show Pixel
+tplinkctl device access status
+tplinkctl device access on --mode black --yes
+tplinkctl device reserve Pixel --ip 192.168.0.40 --yes
+tplinkctl device release Pixel --yes
+tplinkctl device block Pixel --yes --enforce
+tplinkctl device unblock Pixel --yes
+tplinkctl device vpn Pixel on --yes
 tplinkctl speed --top 10
 tplinkctl speedtest
 tplinkctl wifi-info
@@ -68,6 +78,8 @@ tplinkctl vpn-status
 tplinkctl vpn-client-status
 tplinkctl reboot --yes
 ```
+
+Device management commands use the same hostname/IP/MAC lookup as `tplinkctl device Pixel`. Mutating commands require `--yes`. `device block --enforce` also enables Access Control and switches the router into blacklist mode, so use `device access status` first if you want to inspect the current policy before enforcing it.
 
 ## Config
 

@@ -19,7 +19,7 @@ from contextlib import contextmanager
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urlencode, urljoin
 
 from . import __version__
 
@@ -76,6 +76,11 @@ WIFI_ENDPOINTS = {
     "smart_connect": ("admin/wireless?form=smart_connect", "operation=read"),
 }
 SENSITIVE_KEY_RE = re.compile(r"(password|passwd|psk|key|secret|token)", re.IGNORECASE)
+ACCESS_CONTROL_ENABLE = "admin/access_control?form=enable"
+ACCESS_CONTROL_MODE = "admin/access_control?form=mode"
+ACCESS_BLACK_LIST = "admin/access_control?form=black_list"
+ACCESS_WHITE_LIST = "admin/access_control?form=white_list"
+DHCP_RESERVATION = "admin/dhcps?form=reservation"
 
 
 class MetaParser(HTMLParser):
@@ -400,6 +405,101 @@ def match_device(row: dict[str, Any], query: str) -> bool:
         or needle == row["ip"].lower()
         or (mac and mac == normalize_mac(row["mac"]))
     )
+
+
+def find_device(rows: list[dict[str, Any]], query: str) -> dict[str, Any]:
+    matches = [row for row in rows if match_device(row, query)]
+    if not matches:
+        raise SystemExit(f"No device matched `{query}`.")
+    exact = [
+        row for row in matches
+        if query.lower() in {row["hostname"].lower(), row["ip"].lower()}
+        or normalize_mac(query) == normalize_mac(row["mac"])
+    ]
+    if len(exact) == 1:
+        return exact[0]
+    if len(matches) == 1:
+        return matches[0]
+    names = ", ".join(f"{row['hostname']} ({row['ip']}, {row['mac']})" for row in matches[:8])
+    raise SystemExit(f"Device query `{query}` matched multiple devices: {names}")
+
+
+def load_device(router, query: str) -> dict[str, Any]:
+    rows = device_rows(to_plain(router.get_status()))
+    return find_device(rows, query)
+
+
+def on_off(value: bool) -> str:
+    return "on" if value else "off"
+
+
+def form_payload(**items: Any) -> str:
+    return urlencode({key: value for key, value in items.items() if value not in (None, "")})
+
+
+def require_yes(args: argparse.Namespace, action: str) -> None:
+    if not getattr(args, "yes", False):
+        raise SystemExit(f"Refusing to {action} without --yes.")
+
+
+def load_collection(router, path: str) -> list[dict[str, Any]]:
+    response = to_plain(router.request(path, "operation=load", ignore_errors=True))
+    if isinstance(response, dict) and isinstance(response.get("data"), list):
+        return response["data"]
+    if isinstance(response, dict) and isinstance(response.get("data"), dict) and isinstance(response["data"].get("data"), list):
+        return response["data"]["data"]
+    if isinstance(response, list):
+        return response
+    return []
+
+
+def find_list_item(items: list[dict[str, Any]], query: str) -> tuple[int, dict[str, Any]]:
+    needle = query.lower()
+    mac = normalize_mac(query)
+    for index, item in enumerate(items):
+        item_mac = normalize_mac(str(item.get("mac") or item.get("macaddr") or ""))
+        values = {
+            str(item.get("hostname") or item.get("name") or "").lower(),
+            str(item.get("ip") or item.get("ipaddr") or "").lower(),
+        }
+        if needle in values or (mac and mac == item_mac):
+            return index, item
+    for index, item in enumerate(items):
+        name = str(item.get("hostname") or item.get("name") or "").lower()
+        if needle and needle in name:
+            return index, item
+    raise SystemExit(f"No list entry matched `{query}`.")
+
+
+def device_access_payload(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "name": row["hostname"] or row["mac"],
+        "mac": row["mac"],
+        "ipaddr": row["ip"],
+        "deviceType": row["connection"],
+        "conn_type": row["connection"],
+        "host": "NOT HOST",
+    }
+
+
+def reservation_payload(row: dict[str, Any], ip: str | None = None, name: str | None = None) -> dict[str, Any]:
+    return {
+        "hostname": name or row["hostname"] or row["mac"],
+        "ip": ip or row["ip"],
+        "mac": row["mac"],
+        "enable": "on",
+    }
+
+
+def access_control_status(router) -> dict[str, Any]:
+    enable = to_plain(router.request(ACCESS_CONTROL_ENABLE, "operation=read", ignore_errors=True))
+    mode = to_plain(router.request(ACCESS_CONTROL_MODE, "operation=read", ignore_errors=True))
+    return {
+        "enabled": is_on(enable.get("enable") if isinstance(enable, dict) else None),
+        "mode": mode.get("access_mode") if isinstance(mode, dict) else None,
+        "blacklist": load_collection(router, ACCESS_BLACK_LIST),
+        "whitelist": load_collection(router, ACCESS_WHITE_LIST),
+    }
 
 
 def speed_summary(rows: list[dict[str, Any]], top: int = 5) -> dict[str, Any]:
@@ -728,21 +828,128 @@ def cmd_devices(args: argparse.Namespace) -> None:
 def cmd_device(args: argparse.Namespace) -> None:
     def action(router):
         rows = device_rows(to_plain(router.get_status()))
-        matches = [row for row in rows if match_device(row, args.query)]
-        if not matches:
-            raise SystemExit(f"No device matched `{args.query}`.")
-        exact = [
-            row for row in matches
-            if args.query.lower() in {row["hostname"].lower(), row["ip"].lower()}
-            or normalize_mac(args.query) == normalize_mac(row["mac"])
-        ]
-        if len(exact) == 1:
-            return exact[0]
-        if len(matches) == 1:
-            return matches[0]
-        return matches
+        return find_device(rows, args.query)
 
     emit(args, with_session(args, action))
+
+
+def cmd_device_access(args: argparse.Namespace) -> None:
+    def action(router):
+        if args.access_state == "status":
+            return access_control_status(router)
+        require_yes(args, f"turn access control {args.access_state}")
+        router.request(ACCESS_CONTROL_ENABLE, form_payload(operation="write", enable=on_off(args.access_state == "on")), ignore_errors=True)
+        if args.mode:
+            router.request(ACCESS_CONTROL_MODE, form_payload(operation="write", access_mode=args.mode), ignore_errors=True)
+        return access_control_status(router)
+
+    emit(args, with_session(args, action))
+
+
+def cmd_device_reserve(args: argparse.Namespace) -> None:
+    require_yes(args, "create a DHCP reservation")
+
+    def action(router):
+        row = load_device(router, args.query)
+        existing = load_collection(router, DHCP_RESERVATION)
+        normalized = normalize_mac(row["mac"])
+        duplicate = next((item for item in existing if normalize_mac(str(item.get("mac") or "")) == normalized), None)
+        if duplicate:
+            return {"created": False, "reason": "reservation already exists", "reservation": duplicate, "device": row}
+        payload = reservation_payload(row, ip=args.ip, name=args.name)
+        router.request(DHCP_RESERVATION, form_payload(operation="insert", index=0, **payload), ignore_errors=True)
+        return {"created": True, "reservation": payload, "device": row}
+
+    emit(args, with_session(args, action))
+
+
+def cmd_device_release(args: argparse.Namespace) -> None:
+    require_yes(args, "remove a DHCP reservation")
+
+    def action(router):
+        reservations = load_collection(router, DHCP_RESERVATION)
+        index, item = find_list_item(reservations, args.query)
+        router.request(DHCP_RESERVATION, form_payload(operation="remove", index=index, key=item.get("key")), ignore_errors=True)
+        return {"removed": True, "reservation": item}
+
+    emit(args, with_session(args, action))
+
+
+def cmd_device_block(args: argparse.Namespace) -> None:
+    require_yes(args, "add a device to the access-control blacklist")
+
+    def action(router):
+        row = load_device(router, args.query)
+        payload = device_access_payload(row)
+        existing = load_collection(router, ACCESS_BLACK_LIST)
+        duplicate = next((item for item in existing if normalize_mac(str(item.get("mac") or "")) == normalize_mac(row["mac"])), None)
+        if not duplicate:
+            router.request(ACCESS_BLACK_LIST, form_payload(operation="insert", index=0, **payload), ignore_errors=True)
+        if args.enforce:
+            router.request(ACCESS_CONTROL_ENABLE, form_payload(operation="write", enable="on"), ignore_errors=True)
+            router.request(ACCESS_CONTROL_MODE, form_payload(operation="write", access_mode="black"), ignore_errors=True)
+        status = access_control_status(router)
+        return {
+            "blocked": True,
+            "already_listed": duplicate is not None,
+            "enforced": bool(args.enforce),
+            "device": row,
+            "access_control": {
+                "enabled": status["enabled"],
+                "mode": status["mode"],
+                "blacklist_count": len(status["blacklist"]),
+            },
+        }
+
+    emit(args, with_session(args, action))
+
+
+def cmd_device_unblock(args: argparse.Namespace) -> None:
+    require_yes(args, "remove a device from the access-control blacklist")
+
+    def action(router):
+        blacklist = load_collection(router, ACCESS_BLACK_LIST)
+        index, item = find_list_item(blacklist, args.query)
+        router.request(ACCESS_BLACK_LIST, form_payload(operation="remove", index=index, key=item.get("key")), ignore_errors=True)
+        return {"unblocked": True, "device": item}
+
+    emit(args, with_session(args, action))
+
+
+def cmd_device_vpn(args: argparse.Namespace) -> None:
+    require_yes(args, f"turn VPN client routing {on_off(args.enabled)} for a device")
+
+    def action(router):
+        row = load_device(router, args.query)
+        router.set_vpn_client_device(row["mac"], args.enabled)
+        return {"device": row, "vpn_client": args.enabled}
+
+    emit(args, with_session(args, action))
+
+
+def cmd_device_dispatch(args: argparse.Namespace) -> None:
+    if not args.device_args:
+        raise SystemExit("Usage: tplinkctl device QUERY or tplinkctl device <access|reserve|release|block|unblock|vpn> ...")
+    action = args.device_args[0]
+    commands = {
+        "show": build_device_show_parser,
+        "access": build_device_access_parser,
+        "reserve": build_device_reserve_parser,
+        "release": build_device_release_parser,
+        "block": build_device_block_parser,
+        "unblock": build_device_unblock_parser,
+        "vpn": build_device_vpn_parser,
+    }
+    if action not in commands:
+        args.query = " ".join(args.device_args)
+        cmd_device(args)
+        return
+    subparser = commands[action]()
+    subvalues = vars(args).copy()
+    subvalues.pop("func", None)
+    subargs = argparse.Namespace(**subvalues)
+    subparser.parse_args(args.device_args[1:], namespace=subargs)
+    subargs.func(subargs)
 
 
 def cmd_speed(args: argparse.Namespace) -> None:
@@ -1031,6 +1238,70 @@ def add_device_filters(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--top", type=int, help="limit rows after filtering and sorting")
 
 
+def device_action_parser(prog: str, description: str) -> argparse.ArgumentParser:
+    return argparse.ArgumentParser(prog=prog, description=description)
+
+
+def build_device_show_parser() -> argparse.ArgumentParser:
+    parser = device_action_parser("tplinkctl device show", "Show one device by hostname, IP, or MAC.")
+    parser.add_argument("query", help="hostname substring, IP address, or MAC address")
+    parser.set_defaults(func=cmd_device)
+    return parser
+
+
+def build_device_access_parser() -> argparse.ArgumentParser:
+    parser = device_action_parser("tplinkctl device access", "Show or change access-control enforcement.")
+    parser.add_argument("access_state", choices=["status", "on", "off"], help="status, on, or off")
+    parser.add_argument("--mode", choices=["black", "white"], help="set blacklist or whitelist mode when turning access control on/off")
+    parser.add_argument("--yes", action="store_true", help="confirm access-control change")
+    parser.set_defaults(func=cmd_device_access)
+    return parser
+
+
+def build_device_reserve_parser() -> argparse.ArgumentParser:
+    parser = device_action_parser("tplinkctl device reserve", "Reserve a device's DHCP address.")
+    parser.add_argument("query", help="device hostname substring, IP address, or MAC address")
+    parser.add_argument("--ip", help="reserved IP address; defaults to the device's current IP")
+    parser.add_argument("--name", help="reservation hostname; defaults to the current device name")
+    parser.add_argument("--yes", action="store_true", help="confirm reservation creation")
+    parser.set_defaults(func=cmd_device_reserve)
+    return parser
+
+
+def build_device_release_parser() -> argparse.ArgumentParser:
+    parser = device_action_parser("tplinkctl device release", "Remove a DHCP reservation.")
+    parser.add_argument("query", help="reservation hostname, IP address, or MAC address")
+    parser.add_argument("--yes", action="store_true", help="confirm reservation removal")
+    parser.set_defaults(func=cmd_device_release)
+    return parser
+
+
+def build_device_block_parser() -> argparse.ArgumentParser:
+    parser = device_action_parser("tplinkctl device block", "Add a device to the access-control blacklist.")
+    parser.add_argument("query", help="device hostname substring, IP address, or MAC address")
+    parser.add_argument("--enforce", action="store_true", help="also enable Access Control and set blacklist mode")
+    parser.add_argument("--yes", action="store_true", help="confirm blacklist change")
+    parser.set_defaults(func=cmd_device_block)
+    return parser
+
+
+def build_device_unblock_parser() -> argparse.ArgumentParser:
+    parser = device_action_parser("tplinkctl device unblock", "Remove a device from the access-control blacklist.")
+    parser.add_argument("query", help="blacklist hostname, IP address, or MAC address")
+    parser.add_argument("--yes", action="store_true", help="confirm blacklist removal")
+    parser.set_defaults(func=cmd_device_unblock)
+    return parser
+
+
+def build_device_vpn_parser() -> argparse.ArgumentParser:
+    parser = device_action_parser("tplinkctl device vpn", "Include or exclude a device from VPN client routing.")
+    parser.add_argument("query", help="device hostname substring, IP address, or MAC address")
+    parser.add_argument("enabled", type=bool_arg, help="on/off")
+    parser.add_argument("--yes", action="store_true", help="confirm VPN client device change")
+    parser.set_defaults(func=cmd_device_vpn)
+    return parser
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="tplinkctl",
@@ -1054,9 +1325,13 @@ def build_parser() -> argparse.ArgumentParser:
     add_device_filters(devices)
     devices.set_defaults(func=cmd_devices)
 
-    device = subparsers.add_parser("device", help="show one device by hostname, IP, or MAC")
-    device.add_argument("query", help="hostname substring, IP address, or MAC address")
-    device.set_defaults(func=cmd_device)
+    device = subparsers.add_parser("device", help="show or manage one device")
+    device.add_argument(
+        "device_args",
+        nargs=argparse.REMAINDER,
+        help="QUERY or one of: show, access, reserve, release, block, unblock, vpn",
+    )
+    device.set_defaults(func=cmd_device_dispatch)
 
     speed = subparsers.add_parser("speed", help="show current router throughput and top devices")
     speed.add_argument("--top", type=int, default=5, help="number of top devices to show")
