@@ -61,6 +61,95 @@ COMMAND_ENV = {
     "enable": "TPLINK_ENABLE_COMMANDS",
     "disable": "TPLINK_DISABLE_COMMANDS",
 }
+PROFILE_ENV = "TPLINK_PROFILE"
+READ_COMMANDS = {
+    "capabilities",
+    "clients",
+    "config",
+    "device",
+    "devices",
+    "doctor",
+    "endpoints",
+    "firmware",
+    "health",
+    "ipv4",
+    "leases",
+    "read",
+    "reservations",
+    "routes",
+    "snapshot",
+    "speed",
+    "status",
+    "tools",
+    "wan",
+    "watch",
+    "wifi-info",
+    "wifi-status",
+    "vpn-client-status",
+    "vpn-status",
+}
+READ_OPERATIONS = {
+    "device.show",
+    "device.list",
+    "device.access.status",
+    "router.firmware",
+    "router.health",
+    "router.status",
+    "router.snapshot",
+    "internet.wan",
+    "internet.speed",
+    "wifi.status",
+    "wifi.info",
+    "vpn.status",
+    "vpn.client_status",
+    "discovery.routes",
+    "discovery.endpoints",
+    "agent.capabilities",
+    "agent.doctor",
+    "agent.tools",
+    "agent.watch",
+    "advanced.read",
+    "device.reservations",
+}
+MUTATION_OPERATIONS = {
+    "device.access.set",
+    "device.reserve",
+    "device.release",
+    "device.block",
+    "device.unblock",
+    "device.vpn",
+    "wifi.toggle",
+    "vpn.toggle",
+    "vpn.client_toggle",
+    "router.reboot",
+    "advanced.raw",
+}
+POLICY_PROFILES = {
+    "read-only": {
+        "description": "Discovery and read-only router inspection. Blocks mutations and raw endpoint writes.",
+        "allow_commands": sorted(READ_COMMANDS),
+        "allow_operations": sorted(READ_OPERATIONS),
+        "deny_operations": sorted(MUTATION_OPERATIONS),
+    },
+    "device-admin": {
+        "description": "Device inventory plus DHCP reservations and access-control changes. Blocks router-wide network changes.",
+        "allow_commands": sorted(READ_COMMANDS | {"device"}),
+        "allow_operations": sorted(READ_OPERATIONS | {"device.access.set", "device.reserve", "device.release", "device.block", "device.unblock"}),
+        "deny_operations": sorted({"device.vpn", "wifi.toggle", "vpn.toggle", "vpn.client_toggle", "router.reboot", "advanced.raw"}),
+    },
+    "network-admin": {
+        "description": "Read operations, device administration, Wi-Fi/VPN toggles, and reboot. Blocks raw endpoint experiments.",
+        "allow_commands": sorted(READ_COMMANDS | {"device", "reboot", "vpn", "vpn-client", "wifi"}),
+        "allow_operations": sorted((READ_OPERATIONS | MUTATION_OPERATIONS) - {"advanced.raw"}),
+        "deny_operations": ["advanced.raw"],
+    },
+    "dangerous": {
+        "description": "No profile-level restrictions. Intended only for trusted local operators.",
+        "allow_commands": ["*"],
+        "allow_operations": ["*"],
+        "deny_operations": [],
+    },
+}
 WIFI_ENDPOINTS = {
     "main": (
         "admin/wireless?form=wireless_2g&form=wireless_5g&form=wireless_5g_2&form=wireless_6g",
@@ -98,6 +187,9 @@ KNOWN_QUIRKS = [
     },
 ]
 CAPABILITIES = [
+    {"id": "agent.capabilities", "command": "capabilities", "type": "agent_discovery", "requires_auth": False, "output": ["json", "plain"], "status": "supported"},
+    {"id": "agent.tools", "command": "tools", "type": "agent_discovery", "requires_auth": False, "output": ["json", "plain"], "status": "supported"},
+    {"id": "agent.watch", "command": "watch <status|devices|speed|health>", "type": "read_monitor", "requires_auth": True, "output": ["json", "jsonl", "plain"], "status": "supported"},
     {"id": "router.firmware", "command": "firmware", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
     {"id": "router.health", "command": "health", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
     {"id": "router.status", "command": "status", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
@@ -556,6 +648,32 @@ def require_yes(args: argparse.Namespace, action: str) -> None:
         raise SystemExit(f"Refusing to {action} without --yes.")
 
 
+def mutation_plan(
+    *,
+    action: str,
+    command: list[str],
+    target: dict[str, Any] | None = None,
+    current: dict[str, Any] | list[dict[str, Any]] | None = None,
+    changes: list[str] | None = None,
+    risk: str,
+    rollback: list[str] | None = None,
+    notes: list[str] | None = None,
+) -> dict[str, Any]:
+    return {
+        "plan": True,
+        "action": action,
+        "will_mutate": False,
+        "requires_confirmation": "--yes",
+        "command": command,
+        "target": target,
+        "current": current,
+        "changes": changes or [],
+        "risk": risk,
+        "rollback": rollback,
+        "notes": notes or [],
+    }
+
+
 def load_collection(router, path: str) -> list[dict[str, Any]]:
     response = to_plain(api_request(router, operation_path(path, "load"), "operation=load", ignore_errors=True))
     if isinstance(response, dict) and isinstance(response.get("data"), list):
@@ -754,12 +872,97 @@ def capability_manifest() -> dict[str, Any]:
             "password": "Set TPLINK_PASSWORD in the agent runtime; do not pass secrets in shell history.",
             "safety": [
                 "Mutating device commands require --yes.",
+                "Use --plan on device mutations before executing them.",
+                "Use --profile for coarse agent permission envelopes.",
                 "Use --enable-commands or --disable-commands to constrain autonomous agents.",
                 "Authenticated sessions are serialized by default with a local lock.",
             ],
         },
         "capabilities": CAPABILITIES,
+        "policy_profiles": POLICY_PROFILES,
         "known_quirks": KNOWN_QUIRKS,
+    }
+
+
+def tool_manifest() -> dict[str, Any]:
+    tools = [
+        {
+            "name": "router_status",
+            "description": "Return router, WAN, Wi-Fi, health, and connected device summary.",
+            "command": ["tplinkctl", "--json", "--no-input", "status"],
+            "read_only": True,
+            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+        {
+            "name": "device_list",
+            "description": "List connected devices with hostname, IP, MAC, speed, usage, and connection type.",
+            "command": ["tplinkctl", "--json", "--no-input", "devices"],
+            "read_only": True,
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "active": {"type": "boolean"},
+                    "sort": {"type": "string", "enum": ["name", "ip", "speed", "usage", "signal"]},
+                    "top": {"type": "integer", "minimum": 1},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "device_show",
+            "description": "Resolve one device by hostname substring, IP, or MAC address.",
+            "command": ["tplinkctl", "--json", "--no-input", "device", "<query>"],
+            "read_only": True,
+            "input_schema": {"type": "object", "required": ["query"], "properties": {"query": {"type": "string"}}, "additionalProperties": False},
+        },
+        {
+            "name": "device_plan",
+            "description": "Plan a device mutation without changing router state.",
+            "command": ["tplinkctl", "--json", "--no-input", "device", "<action>", "<query>", "--plan"],
+            "read_only": True,
+            "input_schema": {
+                "type": "object",
+                "required": ["action", "query"],
+                "properties": {
+                    "action": {"type": "string", "enum": ["reserve", "release", "block", "unblock"]},
+                    "query": {"type": "string"},
+                    "enforce": {"type": "boolean"},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "device_block",
+            "description": "Add a device to the access-control blacklist. Requires explicit confirmation and should be preceded by device_plan.",
+            "command": ["tplinkctl", "--json", "--no-input", "device", "block", "<query>", "--yes"],
+            "read_only": False,
+            "risk": "device_connectivity_loss",
+            "rollback": ["tplinkctl", "--json", "--no-input", "device", "unblock", "<query>", "--yes"],
+            "input_schema": {"type": "object", "required": ["query"], "properties": {"query": {"type": "string"}, "enforce": {"type": "boolean"}}, "additionalProperties": False},
+        },
+        {
+            "name": "device_unblock",
+            "description": "Remove a device from the access-control blacklist.",
+            "command": ["tplinkctl", "--json", "--no-input", "device", "unblock", "<query>", "--yes"],
+            "read_only": False,
+            "risk": "device_access_policy",
+            "input_schema": {"type": "object", "required": ["query"], "properties": {"query": {"type": "string"}}, "additionalProperties": False},
+        },
+        {
+            "name": "doctor_deep",
+            "description": "Run read-only web, auth, and endpoint health probes.",
+            "command": ["tplinkctl", "--json", "--no-input", "doctor", "--deep"],
+            "read_only": True,
+            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    ]
+    return {
+        "name": "tplinkctl-tools",
+        "version": __version__,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "transport": "local-cli",
+        "policy_hint": "Use --profile read-only, device-admin, network-admin, or dangerous to constrain execution.",
+        "tools": tools,
     }
 
 
@@ -1056,6 +1259,22 @@ def cmd_device_access(args: argparse.Namespace) -> None:
     def action(router):
         if args.access_state == "status":
             return access_control_status(router)
+        if getattr(args, "plan", False):
+            status = access_control_status(router)
+            command = ["tplinkctl", "device", "access", args.access_state, "--yes"]
+            if args.mode:
+                command.extend(["--mode", args.mode])
+            return mutation_plan(
+                action="device.access.set",
+                command=command,
+                current=status,
+                changes=[
+                    f"set access control {args.access_state}",
+                    f"set access-control mode {args.mode}" if args.mode else "leave access-control mode unchanged",
+                ],
+                risk="network_access_policy",
+                rollback=["tplinkctl", "device", "access", "off" if args.access_state == "on" else "on", "--yes"],
+            )
         require_yes(args, f"turn access control {args.access_state}")
         expected = args.access_state == "on"
         api_request(
@@ -1082,13 +1301,23 @@ def cmd_device_access(args: argparse.Namespace) -> None:
 
 
 def cmd_device_reserve(args: argparse.Namespace) -> None:
-    require_yes(args, "create a DHCP reservation")
-
     def action(router):
         row = load_device(router, args.query)
         existing = load_collection(router, DHCP_RESERVATION)
         normalized = normalize_mac(row["mac"])
         duplicate = next((item for item in existing if normalize_mac(str(item.get("mac") or "")) == normalized), None)
+        if getattr(args, "plan", False):
+            payload = reservation_payload(row, ip=args.ip, name=args.name)
+            return mutation_plan(
+                action="device.reserve",
+                command=["tplinkctl", "device", "reserve", args.query, "--yes"],
+                target=row,
+                current={"existing_reservation": duplicate},
+                changes=[] if duplicate else [f"reserve {payload['ip']} for {payload['mac']}"],
+                risk="dhcp_reservation",
+                rollback=["tplinkctl", "device", "release", row["mac"], "--yes"],
+                notes=["Reservation already exists; executing the command should be idempotent."] if duplicate else [],
+            )
         if duplicate:
             return {"created": False, "reason": "reservation already exists", "reservation": duplicate, "device": row}
         payload = reservation_payload(row, ip=args.ip, name=args.name)
@@ -1108,15 +1337,25 @@ def cmd_device_reserve(args: argparse.Namespace) -> None:
             raise SystemExit("Router did not confirm the DHCP reservation; no reservation was left behind.")
         return {"created": True, "reservation": payload, "device": row}
 
+    if not getattr(args, "plan", False):
+        require_yes(args, "create a DHCP reservation")
     emit(args, with_session(args, action))
 
 
 def cmd_device_release(args: argparse.Namespace) -> None:
-    require_yes(args, "remove a DHCP reservation")
-
     def action(router):
         reservations = load_collection(router, DHCP_RESERVATION)
         index, item = find_list_item(reservations, args.query)
+        if getattr(args, "plan", False):
+            return mutation_plan(
+                action="device.release",
+                command=["tplinkctl", "device", "release", args.query, "--yes"],
+                target=item,
+                current={"reservation_index": index, "reservation_count": len(reservations)},
+                changes=[f"remove DHCP reservation for {item.get('mac') or item.get('hostname') or args.query}"],
+                risk="dhcp_reservation",
+                rollback=["tplinkctl", "device", "reserve", str(item.get("mac") or args.query), "--yes"],
+            )
         api_request(
             router,
             DHCP_RESERVATION,
@@ -1128,17 +1367,46 @@ def cmd_device_release(args: argparse.Namespace) -> None:
             raise SystemExit("Router did not confirm reservation removal.")
         return {"removed": True, "reservation": item}
 
+    if not getattr(args, "plan", False):
+        require_yes(args, "remove a DHCP reservation")
     emit(args, with_session(args, action))
 
 
 def cmd_device_block(args: argparse.Namespace) -> None:
-    require_yes(args, "add a device to the access-control blacklist")
-
     def action(router):
         row = load_device(router, args.query)
         payload = access_device_payload(router, row, ACCESS_BLACK_DEVICES)
         existing = load_collection(router, ACCESS_BLACK_LIST)
         duplicate = next((item for item in existing if normalize_mac(str(item.get("mac") or "")) == normalize_mac(row["mac"])), None)
+        if getattr(args, "plan", False):
+            status = access_control_status(router)
+            command = ["tplinkctl", "device", "block", args.query, "--yes"]
+            if args.enforce:
+                command.append("--enforce")
+            changes = []
+            if duplicate:
+                changes.append("device is already present in blacklist")
+            else:
+                changes.append(f"add {payload['mac']} to access-control blacklist")
+            if args.enforce:
+                changes.append("enable Access Control and set blacklist mode")
+            return mutation_plan(
+                action="device.block",
+                command=command,
+                target=row,
+                current={
+                    "already_listed": duplicate is not None,
+                    "access_control": {
+                        "enabled": status["enabled"],
+                        "mode": status["mode"],
+                        "blacklist_count": len(status["blacklist"]),
+                    },
+                },
+                changes=changes,
+                risk="device_connectivity_loss",
+                rollback=["tplinkctl", "device", "unblock", row["mac"], "--yes"],
+                notes=["--enforce can disconnect the target immediately if Access Control was disabled."] if args.enforce else [],
+            )
         if not duplicate:
             api_request(
                 router,
@@ -1165,15 +1433,25 @@ def cmd_device_block(args: argparse.Namespace) -> None:
             },
         }
 
+    if not getattr(args, "plan", False):
+        require_yes(args, "add a device to the access-control blacklist")
     emit(args, with_session(args, action))
 
 
 def cmd_device_unblock(args: argparse.Namespace) -> None:
-    require_yes(args, "remove a device from the access-control blacklist")
-
     def action(router):
         blacklist = load_collection(router, ACCESS_BLACK_LIST)
         index, item = find_list_item(blacklist, args.query)
+        if getattr(args, "plan", False):
+            return mutation_plan(
+                action="device.unblock",
+                command=["tplinkctl", "device", "unblock", args.query, "--yes"],
+                target=item,
+                current={"blacklist_index": index, "blacklist_count": len(blacklist)},
+                changes=[f"remove {item.get('mac') or item.get('name') or args.query} from blacklist"],
+                risk="device_access_policy",
+                rollback=["tplinkctl", "device", "block", str(item.get("mac") or args.query), "--yes"],
+            )
         api_request(
             router,
             ACCESS_BLACK_LIST,
@@ -1185,14 +1463,24 @@ def cmd_device_unblock(args: argparse.Namespace) -> None:
             raise SystemExit("Router did not confirm removing the device from the blacklist.")
         return {"unblocked": True, "device": item}
 
+    if not getattr(args, "plan", False):
+        require_yes(args, "remove a device from the access-control blacklist")
     emit(args, with_session(args, action))
 
 
 def cmd_device_vpn(args: argparse.Namespace) -> None:
-    require_yes(args, f"turn VPN client routing {on_off(args.enabled)} for a device")
-
     def action(router):
         row = load_device(router, args.query)
+        if getattr(args, "plan", False):
+            return mutation_plan(
+                action="device.vpn",
+                command=["tplinkctl", "device", "vpn", args.query, on_off(args.enabled), "--yes"],
+                target=row,
+                changes=[f"turn VPN client routing {on_off(args.enabled)} for {row['mac']}"],
+                risk="routing_change",
+                rollback=["tplinkctl", "device", "vpn", row["mac"], on_off(not args.enabled), "--yes"],
+                notes=["Known firmware error on the tested Archer BE3500 for the VPN user-list endpoint."],
+            )
         devices = load_collection(router, "admin/vpn?form=vpn_user_list")
         target = next((item for item in devices if normalize_mac(str(item.get("mac") or "")) == normalize_mac(row["mac"])), None)
         if target is None:
@@ -1212,6 +1500,8 @@ def cmd_device_vpn(args: argparse.Namespace) -> None:
             raise SystemExit("Router did not confirm the VPN client device change.")
         return {"device": row, "vpn_client": args.enabled}
 
+    if not getattr(args, "plan", False):
+        require_yes(args, f"turn VPN client routing {on_off(args.enabled)} for a device")
     emit(args, with_session(args, action))
 
 
@@ -1436,6 +1726,10 @@ def cmd_capabilities(args: argparse.Namespace) -> None:
     emit(args, capability_manifest())
 
 
+def cmd_tools(args: argparse.Namespace) -> None:
+    emit(args, tool_manifest())
+
+
 def web_doctor_payload(args: argparse.Namespace) -> dict[str, Any]:
     args = apply_runtime_defaults(args)
     url = urljoin(args.host.rstrip("/") + "/", "webpages/index.html")
@@ -1482,6 +1776,49 @@ def cmd_routes(args: argparse.Namespace) -> None:
     emit(args, routes)
 
 
+def watch_sample(args: argparse.Namespace) -> dict[str, Any]:
+    def action(router):
+        status = to_plain(router.get_status())
+        sample: dict[str, Any] = {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "target": args.watch_target,
+        }
+        if args.watch_target == "status":
+            firmware = to_plain(router.get_firmware())
+            ipv4 = to_plain(router.get_ipv4_status())
+            sample["data"] = {
+                "router": status_summary(status),
+                "wan": wan_summary(status, ipv4),
+                "health": health_from(status, firmware, ipv4),
+            }
+        elif args.watch_target == "devices":
+            rows = filter_device_rows(device_rows(status), args)
+            sample["data"] = rows
+        elif args.watch_target == "speed":
+            sample["data"] = speed_summary(device_rows(status), top=args.top)
+        elif args.watch_target == "health":
+            firmware = to_plain(router.get_firmware())
+            ipv4 = to_plain(router.get_ipv4_status())
+            sample["data"] = health_from(status, firmware, ipv4)
+        return sample
+
+    return with_session(args, action)
+
+
+def cmd_watch(args: argparse.Namespace) -> None:
+    samples = []
+    for index in range(args.count):
+        sample = watch_sample(args)
+        sample["sequence"] = index + 1
+        samples.append(sample)
+        if args.stream:
+            print(json.dumps(to_plain(sample), sort_keys=True), flush=True)
+        if index + 1 < args.count:
+            time.sleep(args.interval)
+    if not args.stream:
+        emit(args, samples)
+
+
 def cmd_config_path(_: argparse.Namespace) -> None:
     print(config_path())
 
@@ -1515,14 +1852,79 @@ def parse_csv(value: str | None) -> set[str]:
     return {item.strip() for item in value.split(",") if item.strip()}
 
 
+def operation_id(args: argparse.Namespace) -> str:
+    command = getattr(args, "command", "")
+    direct = {
+        "capabilities": "agent.capabilities",
+        "clients": "device.list",
+        "devices": "device.list",
+        "doctor": "agent.doctor",
+        "endpoints": "discovery.endpoints",
+        "firmware": "router.firmware",
+        "health": "router.health",
+        "ipv4": "internet.wan",
+        "leases": "device.list",
+        "reservations": "device.reservations",
+        "routes": "discovery.routes",
+        "snapshot": "router.snapshot",
+        "speed": "internet.speed",
+        "status": "router.status",
+        "tools": "agent.tools",
+        "wan": "internet.wan",
+        "watch": "agent.watch",
+        "wifi": "wifi.toggle",
+        "wifi-info": "wifi.info",
+        "wifi-status": "wifi.status",
+        "vpn": "vpn.toggle",
+        "vpn-client": "vpn.client_toggle",
+        "vpn-client-status": "vpn.client_status",
+        "vpn-status": "vpn.status",
+        "raw": "advanced.raw",
+        "read": "advanced.read",
+        "reboot": "router.reboot",
+    }
+    if command != "device":
+        return direct.get(command, command)
+    device_args = getattr(args, "device_args", []) or []
+    if not device_args:
+        return "device.show"
+    action_words = {"show", "access", "reserve", "release", "block", "unblock", "vpn"}
+    action = device_args[0] if device_args[0] in action_words else device_args[1] if len(device_args) > 1 and device_args[1] in action_words else "show"
+    if action == "access":
+        access_state = ""
+        if len(device_args) > 1 and device_args[0] == "access":
+            access_state = device_args[1]
+        elif len(device_args) > 2:
+            access_state = device_args[2]
+        return "device.access.status" if access_state == "status" else "device.access.set"
+    if action == "show":
+        return "device.show"
+    return f"device.{action}"
+
+
 def ensure_command_allowed(args: argparse.Namespace) -> None:
     command = getattr(args, "command", "")
+    operation = operation_id(args)
+    profile_name = getattr(args, "profile", None) or os.getenv(PROFILE_ENV)
+    if profile_name:
+        profile = POLICY_PROFILES.get(profile_name)
+        if profile is None:
+            raise SystemExit(f"Unknown profile `{profile_name}`; choose one of: {', '.join(sorted(POLICY_PROFILES))}")
+        allowed_commands = set(profile["allow_commands"])
+        allowed_operations = set(profile["allow_operations"])
+        denied_operations = set(profile["deny_operations"])
+        if operation in denied_operations:
+            raise SystemExit(f"Operation `{operation}` blocked by profile `{profile_name}`.")
+        if "*" not in allowed_commands and command not in allowed_commands:
+            raise SystemExit(f"Command `{command}` blocked by profile `{profile_name}`.")
+        if "*" not in allowed_operations and operation not in allowed_operations:
+            raise SystemExit(f"Operation `{operation}` blocked by profile `{profile_name}`.")
     enabled = parse_csv(args.enable_commands) or parse_csv(os.getenv(COMMAND_ENV["enable"]))
     disabled = parse_csv(args.disable_commands) or parse_csv(os.getenv(COMMAND_ENV["disable"]))
-    if enabled and command not in enabled:
-        raise SystemExit(f"Command `{command}` blocked by allowlist: {', '.join(sorted(enabled))}")
-    if command in disabled:
-        raise SystemExit(f"Command `{command}` blocked by denylist.")
+    if enabled and command not in enabled and operation not in enabled:
+        raise SystemExit(f"Command `{command}` / operation `{operation}` blocked by allowlist: {', '.join(sorted(enabled))}")
+    if command in disabled or operation in disabled:
+        raise SystemExit(f"Command `{command}` / operation `{operation}` blocked by denylist.")
 
 
 def add_common(parser: argparse.ArgumentParser) -> None:
@@ -1537,6 +1939,7 @@ def add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--plain", action="store_const", const="plain", dest="output", help="print stable TSV/key-value text to stdout")
     parser.add_argument("--no-input", action="store_true", help="never prompt; fail if required input is missing")
     parser.add_argument("--no-lock", action="store_true", help="do not serialize authenticated router sessions")
+    parser.add_argument("--profile", choices=sorted(POLICY_PROFILES), help="agent policy profile; also reads TPLINK_PROFILE")
     parser.add_argument("--enable-commands", help="comma-separated allowlist for agent use, e.g. status,leases")
     parser.add_argument("--disable-commands", help="comma-separated denylist for agent use, e.g. reboot,wifi")
 
@@ -1585,6 +1988,7 @@ def build_device_access_parser() -> argparse.ArgumentParser:
     parser = device_action_parser("tplinkctl device access", "Show or change access-control enforcement.")
     parser.add_argument("access_state", choices=["status", "on", "off"], help="status, on, or off")
     parser.add_argument("--mode", choices=["black", "white"], help="set blacklist or whitelist mode when turning access control on/off")
+    parser.add_argument("--plan", action="store_true", help="show the planned change without mutating router state")
     parser.add_argument("--yes", action="store_true", help="confirm access-control change")
     parser.set_defaults(func=cmd_device_access)
     return parser
@@ -1595,6 +1999,7 @@ def build_device_reserve_parser() -> argparse.ArgumentParser:
     parser.add_argument("query", help="device hostname substring, IP address, or MAC address")
     parser.add_argument("--ip", help="reserved IP address; defaults to the device's current IP")
     parser.add_argument("--name", help="reservation hostname; defaults to the current device name")
+    parser.add_argument("--plan", action="store_true", help="show the planned change without mutating router state")
     parser.add_argument("--yes", action="store_true", help="confirm reservation creation")
     parser.set_defaults(func=cmd_device_reserve)
     return parser
@@ -1603,6 +2008,7 @@ def build_device_reserve_parser() -> argparse.ArgumentParser:
 def build_device_release_parser() -> argparse.ArgumentParser:
     parser = device_action_parser("tplinkctl device release", "Remove a DHCP reservation.")
     parser.add_argument("query", help="reservation hostname, IP address, or MAC address")
+    parser.add_argument("--plan", action="store_true", help="show the planned change without mutating router state")
     parser.add_argument("--yes", action="store_true", help="confirm reservation removal")
     parser.set_defaults(func=cmd_device_release)
     return parser
@@ -1612,6 +2018,7 @@ def build_device_block_parser() -> argparse.ArgumentParser:
     parser = device_action_parser("tplinkctl device block", "Add a device to the access-control blacklist.")
     parser.add_argument("query", help="device hostname substring, IP address, or MAC address")
     parser.add_argument("--enforce", action="store_true", help="also enable Access Control and set blacklist mode")
+    parser.add_argument("--plan", action="store_true", help="show the planned change without mutating router state")
     parser.add_argument("--yes", action="store_true", help="confirm blacklist change")
     parser.set_defaults(func=cmd_device_block)
     return parser
@@ -1620,6 +2027,7 @@ def build_device_block_parser() -> argparse.ArgumentParser:
 def build_device_unblock_parser() -> argparse.ArgumentParser:
     parser = device_action_parser("tplinkctl device unblock", "Remove a device from the access-control blacklist.")
     parser.add_argument("query", help="blacklist hostname, IP address, or MAC address")
+    parser.add_argument("--plan", action="store_true", help="show the planned change without mutating router state")
     parser.add_argument("--yes", action="store_true", help="confirm blacklist removal")
     parser.set_defaults(func=cmd_device_unblock)
     return parser
@@ -1629,6 +2037,7 @@ def build_device_vpn_parser() -> argparse.ArgumentParser:
     parser = device_action_parser("tplinkctl device vpn", "Include or exclude a device from VPN client routing.")
     parser.add_argument("query", help="device hostname substring, IP address, or MAC address")
     parser.add_argument("enabled", type=bool_arg, help="on/off")
+    parser.add_argument("--plan", action="store_true", help="show the planned change without mutating router state")
     parser.add_argument("--yes", action="store_true", help="confirm VPN client device change")
     parser.set_defaults(func=cmd_device_vpn)
     return parser
@@ -1646,6 +2055,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     capabilities = subparsers.add_parser("capabilities", help="print the agent-readable command and safety manifest")
     capabilities.set_defaults(func=cmd_capabilities)
+
+    tools = subparsers.add_parser("tools", help="print agent tool schemas for local CLI execution")
+    tools.set_defaults(func=cmd_tools)
 
     doctor = subparsers.add_parser("doctor", help="check router web UI reachability and optional authenticated probes")
     doctor.add_argument("--deep", action="store_true", help="run read-only authenticated capability probes")
@@ -1675,6 +2087,14 @@ def build_parser() -> argparse.ArgumentParser:
     speed = subparsers.add_parser("speed", help="show current router throughput and top devices")
     speed.add_argument("--top", type=int, default=5, help="number of top devices to show")
     speed.set_defaults(func=cmd_speed)
+
+    watch = subparsers.add_parser("watch", help="sample read-only router state repeatedly")
+    watch.add_argument("watch_target", choices=["status", "devices", "speed", "health"], help="state to sample")
+    watch.add_argument("--interval", type=float, default=5.0, help="seconds between samples")
+    watch.add_argument("--count", type=int, default=3, help="number of samples")
+    watch.add_argument("--stream", action="store_true", help="print JSON Lines as samples arrive")
+    add_device_filters(watch)
+    watch.set_defaults(func=cmd_watch)
 
     speedtest = subparsers.add_parser("speedtest", help="run a small external internet speed test")
     speedtest.add_argument("--download-bytes", type=int, default=10_000_000, help="download test size")

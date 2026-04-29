@@ -30,6 +30,7 @@ export TPLINK_PASSWORD='your-local-router-password'
 
 tplinkctl doctor
 tplinkctl --json capabilities
+tplinkctl --json tools
 tplinkctl --json doctor --deep
 tplinkctl --json health
 tplinkctl --json status
@@ -51,6 +52,7 @@ Prefer `TPLINK_PASSWORD` or the interactive password prompt over `--password`, s
 ```bash
 tplinkctl firmware
 tplinkctl capabilities
+tplinkctl tools
 tplinkctl health
 tplinkctl status
 tplinkctl snapshot
@@ -67,6 +69,7 @@ tplinkctl device block Pixel --yes --enforce
 tplinkctl device unblock Pixel --yes
 tplinkctl device vpn Pixel on --yes
 tplinkctl speed --top 10
+tplinkctl watch devices --count 3 --active
 tplinkctl speedtest
 tplinkctl wifi-info
 tplinkctl wifi-info --group guest
@@ -114,6 +117,38 @@ tplinkctl --json --no-input health
 tplinkctl --json --no-input status | jq '.router, .wan, .wifi.networks, .devices[] | {hostname, ip, connection, active, down, up, usage}'
 tplinkctl --json --enable-commands status,devices devices --active
 tplinkctl --disable-commands reboot,wifi status
+```
+
+Use policy profiles when a whole agent session needs a fixed permission envelope:
+
+```bash
+tplinkctl --json --profile read-only status
+tplinkctl --json --profile device-admin device block Pixel --plan --enforce
+tplinkctl --json --profile device-admin device block Pixel --yes --enforce
+tplinkctl --json --profile network-admin wifi guest_2g on
+```
+
+Profiles can also be set with `TPLINK_PROFILE=read-only`, `device-admin`, `network-admin`, or `dangerous`.
+
+Plan mutating device operations before executing them:
+
+```bash
+tplinkctl --json --no-input device reserve Pixel --plan
+tplinkctl --json --no-input device block Pixel --plan --enforce
+tplinkctl --json --no-input device unblock Pixel --plan
+```
+
+`tools` prints a local tool schema that agent frameworks can map to shell commands:
+
+```bash
+tplinkctl --json tools | jq '.tools[] | {name, read_only, command}'
+```
+
+`watch` samples read-only router state repeatedly. Use `--stream` for JSON Lines:
+
+```bash
+tplinkctl --json --no-input watch devices --active --count 5 --interval 2
+tplinkctl --no-input watch speed --count 10 --interval 1 --stream
 ```
 
 `doctor` checks that the router web UI is reachable and reports page metadata without logging in:

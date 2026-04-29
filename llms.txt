@@ -5,25 +5,31 @@
 ## Start Here
 
 - Capabilities manifest: `tplinkctl --json capabilities`
+- Tool schema manifest: `tplinkctl --json tools`
 - Read-only router probe: `tplinkctl --json --no-input doctor --deep`
 - Broad state snapshot: `tplinkctl --json --no-input snapshot`
 - Current status: `tplinkctl --json --no-input status`
 - Connected devices: `tplinkctl --json --no-input devices --active`
 - Device detail: `tplinkctl --json --no-input device <hostname-or-ip-or-mac>`
+- Monitor loop: `tplinkctl --json --no-input watch devices --active --count 3`
 
 ## Agent Safety
 
 - Prefer `--json --no-input` for autonomous runs.
 - Set `TPLINK_PASSWORD` in the agent runtime. Do not pass secrets in prompts or shell history.
 - Use `--enable-commands` and `--disable-commands` to constrain agents.
+- Use `--profile read-only`, `device-admin`, `network-admin`, or `dangerous` for coarse session permissions.
 - Mutating device commands require `--yes`.
+- Use `--plan` before mutating device state.
 - Authenticated router sessions use a local lock by default.
 
 ## Useful Device Actions
 
 - Reserve DHCP address: `tplinkctl --json --no-input device reserve <query> --yes`
+- Plan DHCP reservation: `tplinkctl --json --no-input device reserve <query> --plan`
 - Release reservation: `tplinkctl --json --no-input device release <query> --yes`
 - Block device: `tplinkctl --json --no-input device block <query> --yes`
+- Plan device block: `tplinkctl --json --no-input device block <query> --plan --enforce`
 - Block and enforce blacklist mode: `tplinkctl --json --no-input device block <query> --yes --enforce`
 - Unblock device: `tplinkctl --json --no-input device unblock <query> --yes`
 - Access-control status: `tplinkctl --json --no-input device access status`

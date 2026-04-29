@@ -22,10 +22,11 @@ Do not echo `TPLINK_PASSWORD` in logs, reports, prompts, or shell snippets.
 ## Discovery Flow
 
 1. Run `tplinkctl --json capabilities` to inspect available commands, risks, rollback hints, and known firmware issues.
-2. Run `tplinkctl --json --no-input doctor --deep` to verify web UI reachability, authentication, and read-only endpoint health.
-3. Run `tplinkctl --json --no-input status` for a human-sized router summary.
-4. Run `tplinkctl --json --no-input devices --active` before making device decisions.
-5. Use `tplinkctl --json --no-input device <query>` to resolve an exact hostname, IP, or MAC before mutating.
+2. Run `tplinkctl --json tools` to discover the local tool surface and command mappings.
+3. Run `tplinkctl --json --no-input doctor --deep` to verify web UI reachability, authentication, and read-only endpoint health.
+4. Run `tplinkctl --json --no-input status` for a human-sized router summary.
+5. Run `tplinkctl --json --no-input devices --active` before making device decisions.
+6. Use `tplinkctl --json --no-input device <query>` to resolve an exact hostname, IP, or MAC before mutating.
 
 ## Guardrails
 
@@ -41,9 +42,25 @@ Use denylists for broad agents that must not disrupt connectivity:
 tplinkctl --json --no-input --disable-commands reboot,wifi,vpn,vpn-client,raw status
 ```
 
+Prefer profile envelopes for long-running agents:
+
+```bash
+TPLINK_PROFILE=read-only tplinkctl --json --no-input status
+TPLINK_PROFILE=device-admin tplinkctl --json --no-input device block Pixel --plan
+TPLINK_PROFILE=network-admin tplinkctl --json --no-input wifi guest_2g on
+```
+
+Profiles:
+
+- `read-only`: discovery and read-only inspection, no mutations.
+- `device-admin`: device inventory, DHCP reservations, access-control block/unblock, no router-wide toggles.
+- `network-admin`: device administration plus Wi-Fi/VPN/reboot, no raw endpoint experiments.
+- `dangerous`: no profile-level restrictions.
+
 Mutating commands should include a rollback in the agent plan:
 
 ```bash
+tplinkctl --json --no-input device block Pixel --plan --enforce
 tplinkctl --json --no-input device block Pixel --yes
 tplinkctl --json --no-input device unblock Pixel --yes
 ```
@@ -62,6 +79,8 @@ High confidence:
 - `wifi.info`: SSIDs, bands, channel state, redacted secrets
 - `internet.speed`: current router-reported device throughput
 - `internet.speedtest`: external Cloudflare speed test
+- `agent.tools`: local tool schemas for agent wrappers
+- `agent.watch`: repeated read-only monitoring samples
 
 Known risky or experimental:
 
@@ -80,11 +99,25 @@ The capability manifest is intentionally stable enough for agents to parse:
 tplinkctl --json capabilities | jq '.capabilities[] | {id, command, type, status, risk}'
 ```
 
+The tool manifest is intended for wrappers that want MCP-like metadata without importing Python:
+
+```bash
+tplinkctl --json tools | jq '.tools[] | {name, read_only, command, risk}'
+```
+
+`watch` can return an array or stream JSON Lines:
+
+```bash
+tplinkctl --json --no-input watch devices --active --count 3 --interval 2
+tplinkctl --no-input watch speed --count 10 --interval 1 --stream
+```
+
 ## Development Checks
 
 ```bash
 make test
 make smoke
 tplinkctl --json capabilities
+tplinkctl --json tools
 tplinkctl --json --no-input doctor --deep
 ```

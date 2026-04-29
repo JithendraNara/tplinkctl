@@ -294,11 +294,53 @@ class CliTests(unittest.TestCase):
         capability_ids = {item["id"] for item in data["capabilities"]}
         self.assertIn("device.block", capability_ids)
         self.assertIn("router.status", capability_ids)
+        self.assertIn("device-admin", data["policy_profiles"])
         device_block = next(item for item in data["capabilities"] if item["id"] == "device.block")
         device_vpn = next(item for item in data["capabilities"] if item["id"] == "device.vpn")
         self.assertEqual(device_block["requires_confirmation"], "--yes")
         self.assertEqual(device_vpn["status"], "firmware_error")
         self.assertIn("--json", data["agent_contract"]["prefer"])
+
+    def test_tools_reports_agent_tool_schemas(self):
+        output = run_cli(["--json", "tools"])
+        data = json.loads(output)
+        tool_names = {item["name"] for item in data["tools"]}
+        self.assertIn("router_status", tool_names)
+        self.assertIn("device_plan", tool_names)
+        self.assertEqual(data["transport"], "local-cli")
+
+    def test_device_block_plan_does_not_mutate(self):
+        output = run_cli(["--json", "--no-input", "device", "block", "debian", "--plan", "--enforce"])
+        data = json.loads(output)
+        self.assertTrue(data["plan"])
+        self.assertFalse(data["will_mutate"])
+        self.assertEqual(data["action"], "device.block")
+        self.assertEqual(data["target"]["mac"], "48-BA-4E-40-B4-F4")
+        self.assertIn("--enforce", data["command"])
+        self.assertIn("device_connectivity_loss", data["risk"])
+
+    def test_device_admin_profile_allows_device_plan_and_blocks_wifi(self):
+        output = run_cli(["--json", "--profile", "device-admin", "--no-input", "device", "reserve", "debian", "--plan"])
+        data = json.loads(output)
+        self.assertEqual(data["action"], "device.reserve")
+        with self.assertRaises(SystemExit) as raised:
+            run_cli(["--profile", "device-admin", "wifi", "guest_2g", "on"])
+        self.assertIn("profile", str(raised.exception))
+
+    def test_read_only_profile_blocks_device_mutation(self):
+        output = run_cli(["--json", "--profile", "read-only", "--no-input", "device", "debian"])
+        data = json.loads(output)
+        self.assertEqual(data["hostname"], "debian_linux")
+        with self.assertRaises(SystemExit) as raised:
+            run_cli(["--profile", "read-only", "--no-input", "device", "block", "debian", "--plan"])
+        self.assertIn("blocked", str(raised.exception))
+
+    def test_watch_collects_read_only_samples(self):
+        output = run_cli(["--json", "--no-input", "watch", "devices", "--count", "1", "--active"])
+        data = json.loads(output)
+        self.assertEqual(data[0]["target"], "devices")
+        self.assertEqual(data[0]["sequence"], 1)
+        self.assertEqual(data[0]["data"][0]["hostname"], "debian_linux")
 
     def test_deep_doctor_runs_read_only_probes(self):
         out = io.StringIO()
