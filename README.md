@@ -135,11 +135,17 @@ On this router, `#/internetAdv` maps to `index-BOBVatjl.js`, which exposes inter
 
 ## Raw Mode
 
-The `raw` command is for experiments with endpoint paths discovered from the router's JavaScript bundle:
+The `raw` command is for experiments with endpoint paths discovered from the router's JavaScript bundle. Note that operation placement matters — some endpoints require `operation=read` in the URL path, others in the POST body:
 
 ```bash
-tplinkctl --json read '/admin/network?form=status_ipv4'
-tplinkctl --json raw '/admin/network?form=status_ipv4' --data 'operation=read'
+# operation in path (wan_fc style)
+tplinkctl raw '/admin/network?form=wan_fc&operation=read' --data ''
+
+# operation in body (status_ipv4 style)
+tplinkctl raw '/admin/network?form=status_ipv4' --data 'operation=read'
+
+# see error responses without crashing
+tplinkctl raw '/admin/path?form=form' --data 'operation=read' --ignore-errors
 ```
 
 Quote endpoint paths in shells like `zsh`, because `?` is a glob character.

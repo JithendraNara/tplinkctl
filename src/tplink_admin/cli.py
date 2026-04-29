@@ -964,12 +964,17 @@ def cmd_device_reserve(args: argparse.Namespace) -> None:
         if duplicate:
             return {"created": False, "reason": "reservation already exists", "reservation": duplicate, "device": row}
         payload = reservation_payload(row, ip=args.ip, name=args.name)
-        api_request(
+        response = api_request(
             router,
             DHCP_RESERVATION,
             insert_payload(payload),
             ignore_errors=True,
         )
+        if isinstance(response, dict) and response.get("success") is False and response.get("errorcode") == "imb duplication":
+            refreshed = load_collection(router, DHCP_RESERVATION)
+            dup = next((item for item in refreshed if normalize_mac(str(item.get("mac") or "")) == normalized), None)
+            if dup:
+                return {"created": False, "reason": "reservation already exists", "reservation": dup, "device": row}
         refreshed = load_collection(router, DHCP_RESERVATION)
         if not contains_mac(refreshed, row["mac"]):
             raise SystemExit("Router did not confirm the DHCP reservation; no reservation was left behind.")
@@ -1085,7 +1090,6 @@ def cmd_device_vpn(args: argparse.Namespace) -> None:
 def cmd_device_dispatch(args: argparse.Namespace) -> None:
     if not args.device_args:
         raise SystemExit("Usage: tplinkctl device QUERY or tplinkctl device <access|reserve|release|block|unblock|vpn> ...")
-    action = args.device_args[0]
     commands = {
         "show": build_device_show_parser,
         "access": build_device_access_parser,
@@ -1095,16 +1099,49 @@ def cmd_device_dispatch(args: argparse.Namespace) -> None:
         "unblock": build_device_unblock_parser,
         "vpn": build_device_vpn_parser,
     }
-    if action not in commands:
+    access_subcommands = {"status", "on", "off"}
+    if len(args.device_args) >= 2 and args.device_args[0] in commands:
+        # e.g. "device reserve debian" -> device_args=['reserve', 'debian', '--yes']
+        action = args.device_args[0]
+        subparser = commands[action]()
+        subvalues = vars(args).copy()
+        subvalues.pop("func", None)
+        subargs = argparse.Namespace(**subvalues)
+        # For access subcommand: args are [action, access_state, ...] - no query
+        # For other subcommands: args are [action, query, ...]
+        if action == "access":
+            subparser.parse_args(args.device_args[1:], namespace=subargs)
+        else:
+            query = args.device_args[1] if len(args.device_args) > 1 else ""
+            subargs.query = query
+            # query is positional, so include it at the front of the args
+            subparser.parse_args([query] + args.device_args[2:], namespace=subargs)
+        subargs.func(subargs)
+    elif len(args.device_args) >= 2 and args.device_args[1] in commands:
+        # e.g. "device debian show" -> device_args=['debian', 'show']
+        action = args.device_args[1]
+        subparser = commands[action]()
+        subvalues = vars(args).copy()
+        subvalues.pop("func", None)
+        subargs = argparse.Namespace(**subvalues)
+        if action == "access":
+            # e.g. "device debian access status" -> access_state='status', no query
+            if args.device_args[0] in access_subcommands:
+                # "device access status" - access_state is in position 0
+                subargs.query = ""
+                subparser.parse_args(args.device_args[1:], namespace=subargs)
+            else:
+                # "device debian access status" - access_state is in position 2
+                subargs.query = args.device_args[0]
+                subparser.parse_args(args.device_args[2:], namespace=subargs)
+        else:
+            query = args.device_args[0]
+            subargs.query = query
+            subparser.parse_args([query] + args.device_args[2:], namespace=subargs)
+        subargs.func(subargs)
+    else:
         args.query = " ".join(args.device_args)
         cmd_device(args)
-        return
-    subparser = commands[action]()
-    subvalues = vars(args).copy()
-    subvalues.pop("func", None)
-    subargs = argparse.Namespace(**subvalues)
-    subparser.parse_args(args.device_args[1:], namespace=subargs)
-    subargs.func(subargs)
 
 
 def cmd_speed(args: argparse.Namespace) -> None:

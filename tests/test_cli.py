@@ -227,12 +227,24 @@ class CliTests(unittest.TestCase):
         self.assertTrue(data["created"])
         self.assertEqual(data["reservation"]["ip"], "192.168.0.79")
 
+    def test_device_reserve_accepts_postfix_action(self):
+        output = run_cli(["--json", "--no-input", "device", "debian", "reserve", "--yes"])
+        data = json.loads(output)
+        self.assertTrue(data["created"])
+        self.assertEqual(data["reservation"]["mac"], "48-BA-4E-40-B4-F4")
+
     def test_device_block_can_enforce_blacklist_mode(self):
         output = run_cli(["--json", "--no-input", "device", "block", "debian", "--yes", "--enforce"])
         data = json.loads(output)
         self.assertTrue(data["blocked"])
         self.assertTrue(data["enforced"])
         self.assertEqual(data["access_control"]["mode"], "black")
+
+    def test_device_block_accepts_postfix_action(self):
+        output = run_cli(["--json", "--no-input", "device", "debian", "block", "--yes"])
+        data = json.loads(output)
+        self.assertTrue(data["blocked"])
+        self.assertFalse(data["enforced"])
 
     def test_device_unblock_removes_blacklist_entry(self):
         router = FakeRouter()
