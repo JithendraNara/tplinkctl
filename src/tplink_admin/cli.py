@@ -84,6 +84,47 @@ ACCESS_WHITE_LIST = "admin/access_control?form=white_list"
 ACCESS_BLACK_DEVICES = "admin/access_control?form=black_devices"
 ACCESS_WHITE_DEVICES = "admin/access_control?form=white_devices"
 DHCP_RESERVATION = "admin/dhcps?form=reservation"
+KNOWN_QUIRKS = [
+    {
+        "id": "sg-operation-placement",
+        "applies_to": ["Archer BE-series", "TplinkRouterSG"],
+        "summary": "Some SG/BE endpoints require operation parameters in the URL as well as the encrypted payload.",
+    },
+    {
+        "id": "vpn-user-list-dispatcher-error",
+        "applies_to": ["Archer BE3500 firmware 1.1.3 Build 20251120"],
+        "summary": "The live router returns a Lua dispatcher error for admin/vpn?form=vpn_user_list on this firmware.",
+        "affects": ["device.vpn"],
+    },
+]
+CAPABILITIES = [
+    {"id": "router.firmware", "command": "firmware", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
+    {"id": "router.health", "command": "health", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
+    {"id": "router.status", "command": "status", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
+    {"id": "router.snapshot", "command": "snapshot", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
+    {"id": "internet.wan", "command": "wan", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
+    {"id": "internet.speed", "command": "speed", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
+    {"id": "internet.speedtest", "command": "speedtest", "type": "external_network_test", "requires_auth": False, "output": ["json", "plain"], "status": "supported"},
+    {"id": "wifi.status", "command": "wifi-status", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
+    {"id": "wifi.info", "command": "wifi-info", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
+    {"id": "wifi.toggle", "command": "wifi <connection> <on|off>", "type": "mutation", "requires_auth": True, "requires_confirmation": False, "risk": "network_outage", "rollback": "Run the opposite wifi command.", "status": "supported"},
+    {"id": "device.list", "command": "devices", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
+    {"id": "device.show", "command": "device <query>", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
+    {"id": "device.access", "command": "device access <status|on|off>", "type": "read_or_mutation", "requires_auth": True, "requires_confirmation": "--yes for on/off", "risk": "network_access_policy", "status": "supported"},
+    {"id": "device.reserve", "command": "device reserve <query> --yes", "type": "mutation", "requires_auth": True, "requires_confirmation": "--yes", "risk": "dhcp_reservation", "rollback": "device release <query> --yes", "status": "live_verified"},
+    {"id": "device.release", "command": "device release <query> --yes", "type": "mutation", "requires_auth": True, "requires_confirmation": "--yes", "risk": "dhcp_reservation", "rollback": "device reserve <query> --yes", "status": "live_verified"},
+    {"id": "device.block", "command": "device block <query> --yes [--enforce]", "type": "mutation", "requires_auth": True, "requires_confirmation": "--yes", "risk": "device_connectivity_loss", "rollback": "device unblock <query> --yes", "status": "live_verified"},
+    {"id": "device.unblock", "command": "device unblock <query> --yes", "type": "mutation", "requires_auth": True, "requires_confirmation": "--yes", "risk": "device_access_policy", "rollback": "device block <query> --yes", "status": "live_verified"},
+    {"id": "device.vpn", "command": "device vpn <query> <on|off> --yes", "type": "mutation", "requires_auth": True, "requires_confirmation": "--yes", "risk": "routing_change", "status": "firmware_error", "note": "Known to fail on the tested Archer BE3500 firmware."},
+    {"id": "vpn.status", "command": "vpn-status", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
+    {"id": "vpn.client_status", "command": "vpn-client-status", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
+    {"id": "vpn.client_toggle", "command": "vpn-client <on|off>", "type": "mutation", "requires_auth": True, "risk": "routing_change", "status": "supported"},
+    {"id": "router.reboot", "command": "reboot --yes", "type": "mutation", "requires_auth": True, "requires_confirmation": "--yes", "risk": "router_reboot", "status": "supported"},
+    {"id": "discovery.routes", "command": "routes", "type": "local_discovery", "requires_auth": False, "output": ["json", "plain"], "status": "supported"},
+    {"id": "discovery.endpoints", "command": "endpoints", "type": "local_discovery", "requires_auth": False, "output": ["json", "plain"], "status": "supported"},
+    {"id": "advanced.read", "command": "read <path>", "type": "advanced_read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
+    {"id": "advanced.raw", "command": "raw <path>", "type": "advanced_escape_hatch", "requires_auth": True, "risk": "unknown_endpoint_effects", "status": "supported"},
+]
 
 
 class MetaParser(HTMLParser):
@@ -288,6 +329,8 @@ def normalize_api_path(path: str) -> str:
 def safe_call(label: str, func) -> dict[str, Any]:
     try:
         return {"ok": True, "data": to_plain(func())}
+    except SystemExit as exc:
+        return {"ok": False, "error": f"SystemExit: {exc}"}
     except Exception as exc:
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
@@ -698,6 +741,91 @@ def read_wifi_info(router) -> dict[str, Any]:
         "networks": networks,
         "errors": errors,
     }
+
+
+def capability_manifest() -> dict[str, Any]:
+    return {
+        "name": "tplinkctl",
+        "version": __version__,
+        "default_host": DEFAULT_HOST,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "agent_contract": {
+            "prefer": ["--json", "--no-input"],
+            "password": "Set TPLINK_PASSWORD in the agent runtime; do not pass secrets in shell history.",
+            "safety": [
+                "Mutating device commands require --yes.",
+                "Use --enable-commands or --disable-commands to constrain autonomous agents.",
+                "Authenticated sessions are serialized by default with a local lock.",
+            ],
+        },
+        "capabilities": CAPABILITIES,
+        "known_quirks": KNOWN_QUIRKS,
+    }
+
+
+def probe_result(probe_id: str, capability: str, result: dict[str, Any], required: bool = True) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "id": probe_id,
+        "capability": capability,
+        "required": required,
+        "ok": result["ok"],
+    }
+    if result["ok"]:
+        data = result.get("data")
+        if isinstance(data, dict):
+            row["keys"] = sorted(str(key) for key in data.keys())[:20]
+        elif isinstance(data, list):
+            row["count"] = len(data)
+        else:
+            row["summary"] = data
+    else:
+        row["error"] = result["error"]
+    return row
+
+
+def deep_doctor_payload(args: argparse.Namespace, web_result: dict[str, Any]) -> dict[str, Any]:
+    def action(router):
+        firmware_probe = safe_call("firmware", router.get_firmware)
+        status_probe = safe_call("status", router.get_status)
+        ipv4_probe = safe_call("ipv4", router.get_ipv4_status)
+        probes = [
+            probe_result("auth.firmware", "router.firmware", firmware_probe),
+            probe_result("router.status", "router.status", status_probe),
+            probe_result("internet.ipv4", "internet.wan", ipv4_probe),
+            probe_result("dhcp.leases", "device.list", safe_call("leases", router.get_ipv4_dhcp_leases)),
+            probe_result("dhcp.reservations", "device.reserve", safe_call("reservations", lambda: load_collection(router, DHCP_RESERVATION)), required=False),
+            probe_result("wifi.info", "wifi.info", safe_call("wifi_info", lambda: read_wifi_info(router)), required=False),
+            probe_result("device.access", "device.access", safe_call("access_control", lambda: access_control_status(router)), required=False),
+            probe_result("vpn.status", "vpn.status", safe_call("vpn_status", router.get_vpn_status), required=False),
+            probe_result("vpn.client_status", "vpn.client_status", safe_call("vpn_client_status", router.get_vpn_client_status), required=False),
+            probe_result("vpn.user_list", "device.vpn", safe_call("vpn_user_list", lambda: load_collection(router, "admin/vpn?form=vpn_user_list")), required=False),
+        ]
+        firmware = firmware_probe.get("data") if firmware_probe["ok"] else {}
+        status = status_probe.get("data") if status_probe["ok"] else {}
+        ipv4 = ipv4_probe.get("data") if ipv4_probe["ok"] else {}
+        required_ok = all(probe["ok"] for probe in probes if probe["required"])
+        payload = {
+            **web_result,
+            "ok": web_result["ok"] and required_ok,
+            "deep": True,
+            "router": {
+                "model": firmware.get("model") if isinstance(firmware, dict) else None,
+                "hardware_version": firmware.get("hardware_version") if isinstance(firmware, dict) else None,
+                "firmware_version": firmware.get("firmware_version") if isinstance(firmware, dict) else None,
+            },
+            "probes": probes,
+            "capability_summary": {
+                "total": len(CAPABILITIES),
+                "live_verified": len([cap for cap in CAPABILITIES if cap.get("status") == "live_verified"]),
+                "firmware_error": [cap["id"] for cap in CAPABILITIES if cap.get("status") == "firmware_error"],
+            },
+            "known_quirks": KNOWN_QUIRKS,
+        }
+        if isinstance(status, dict) and isinstance(firmware, dict) and isinstance(ipv4, dict):
+            payload["health"] = health_from(status, firmware, ipv4)
+        return payload
+
+    return with_session(args, action)
 
 
 def health_from(status: dict[str, Any], firmware: dict[str, Any], ipv4: dict[str, Any]) -> dict[str, Any]:
@@ -1304,7 +1432,11 @@ def cmd_snapshot(args: argparse.Namespace) -> None:
     emit(args, with_session(args, action))
 
 
-def cmd_doctor(args: argparse.Namespace) -> None:
+def cmd_capabilities(args: argparse.Namespace) -> None:
+    emit(args, capability_manifest())
+
+
+def web_doctor_payload(args: argparse.Namespace) -> dict[str, Any]:
     args = apply_runtime_defaults(args)
     url = urljoin(args.host.rstrip("/") + "/", "webpages/index.html")
     try:
@@ -1314,16 +1446,25 @@ def cmd_doctor(args: argparse.Namespace) -> None:
         raise SystemExit(f"Router web UI check failed: {exc}") from exc
     parser = MetaParser()
     parser.feed(response.text)
+    return {
+        "ok": True,
+        "deep": False,
+        "url": url,
+        "status_code": response.status_code,
+        "meta": parser.meta,
+        "scripts": parser.scripts,
+        "stylesheets": parser.stylesheets,
+    }
+
+
+def cmd_doctor(args: argparse.Namespace) -> None:
+    web_result = web_doctor_payload(args)
+    if getattr(args, "deep", False):
+        emit(args, deep_doctor_payload(args, web_result))
+        return
     emit(
         args,
-        {
-            "ok": True,
-            "url": url,
-            "status_code": response.status_code,
-            "meta": parser.meta,
-            "scripts": parser.scripts,
-            "stylesheets": parser.stylesheets,
-        },
+        web_result,
     )
 
 
@@ -1411,7 +1552,6 @@ def add_simple_commands(subparsers: argparse._SubParsersAction[argparse.Argument
         "ipv4": (cmd_ipv4, "show WAN/LAN IPv4 status"),
         "leases": (cmd_leases, "list DHCP leases"),
         "reservations": (cmd_reservations, "list IPv4 DHCP reservations"),
-        "doctor": (cmd_doctor, "check router web UI reachability without logging in"),
         "vpn-status": (cmd_vpn_status, "show VPN server status"),
         "vpn-client-status": (cmd_vpn_client_status, "show VPN client status"),
     }
@@ -1503,6 +1643,13 @@ def build_parser() -> argparse.ArgumentParser:
     add_common(parser)
     subparsers = parser.add_subparsers(dest="command", required=True)
     add_simple_commands(subparsers)
+
+    capabilities = subparsers.add_parser("capabilities", help="print the agent-readable command and safety manifest")
+    capabilities.set_defaults(func=cmd_capabilities)
+
+    doctor = subparsers.add_parser("doctor", help="check router web UI reachability and optional authenticated probes")
+    doctor.add_argument("--deep", action="store_true", help="run read-only authenticated capability probes")
+    doctor.set_defaults(func=cmd_doctor)
 
     wifi = subparsers.add_parser("wifi", help="enable or disable a Wi-Fi network")
     wifi.add_argument("connection", type=connection_arg, help="for example: host_2g, host_5g, host_6g, guest_2g, iot_2g")

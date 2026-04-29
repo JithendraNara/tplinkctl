@@ -10,6 +10,14 @@ from unittest.mock import patch
 from tplink_admin import cli
 
 
+class FakeResponse:
+    status_code = 200
+    text = '<html><head><meta name="model" content="Archer"><script src="js/app.js"></script></head></html>'
+
+    def raise_for_status(self):
+        return None
+
+
 class FakeRouter:
     last = None
 
@@ -279,6 +287,36 @@ class CliTests(unittest.TestCase):
         self.assertTrue(data["smart_connect"])
         self.assertEqual(data["networks"][0]["ssid"], "lab")
         self.assertNotIn("psk_key", data["networks"][0])
+
+    def test_capabilities_reports_agent_contract(self):
+        output = run_cli(["--json", "capabilities"])
+        data = json.loads(output)
+        capability_ids = {item["id"] for item in data["capabilities"]}
+        self.assertIn("device.block", capability_ids)
+        self.assertIn("router.status", capability_ids)
+        device_block = next(item for item in data["capabilities"] if item["id"] == "device.block")
+        device_vpn = next(item for item in data["capabilities"] if item["id"] == "device.vpn")
+        self.assertEqual(device_block["requires_confirmation"], "--yes")
+        self.assertEqual(device_vpn["status"], "firmware_error")
+        self.assertIn("--json", data["agent_contract"]["prefer"])
+
+    def test_deep_doctor_runs_read_only_probes(self):
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp:
+            with (
+                contextlib.redirect_stdout(out),
+                patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp}, clear=False),
+                patch.object(cli.requests, "get", return_value=FakeResponse()),
+                patch.object(cli, "build_router", return_value=FakeRouter()),
+            ):
+                cli.main(["--json", "--no-input", "doctor", "--deep"])
+        data = json.loads(out.getvalue())
+        probe_ids = {probe["id"] for probe in data["probes"]}
+        self.assertTrue(data["deep"])
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["router"]["model"], "Archer BE3500")
+        self.assertIn("device.access", probe_ids)
+        self.assertIn("vpn.user_list", probe_ids)
 
     def test_denylist_blocks_command(self):
         with self.assertRaises(SystemExit) as raised:

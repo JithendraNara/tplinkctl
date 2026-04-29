@@ -29,6 +29,8 @@ tplinkctl config set --host http://192.168.0.1 --username admin --client sg
 export TPLINK_PASSWORD='your-local-router-password'
 
 tplinkctl doctor
+tplinkctl --json capabilities
+tplinkctl --json doctor --deep
 tplinkctl --json health
 tplinkctl --json status
 tplinkctl devices --active
@@ -48,6 +50,7 @@ Prefer `TPLINK_PASSWORD` or the interactive password prompt over `--password`, s
 
 ```bash
 tplinkctl firmware
+tplinkctl capabilities
 tplinkctl health
 tplinkctl status
 tplinkctl snapshot
@@ -119,7 +122,21 @@ tplinkctl --disable-commands reboot,wifi status
 tplinkctl --json doctor
 ```
 
+Use `doctor --deep` when an agent needs a read-only authenticated readiness check across the core router endpoints:
+
+```bash
+tplinkctl --json --no-input doctor --deep
+```
+
+`capabilities` prints a stable agent-readable manifest with command IDs, risk levels, confirmation requirements, rollback hints, and known firmware quirks:
+
+```bash
+tplinkctl --json capabilities | jq '.capabilities[] | {id, command, status, risk}'
+```
+
 Authenticated commands are serialized with a local lock by default because the router login flow can reject overlapping sessions. Use `--no-lock` only when you are deliberately testing concurrency.
+
+See [AGENTS.md](AGENTS.md) and [llms.txt](llms.txt) for the agent playbook and discovery entrypoint.
 
 ## UI Discovery
 
