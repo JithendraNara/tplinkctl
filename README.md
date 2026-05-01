@@ -32,6 +32,8 @@ tplinkctl doctor
 tplinkctl --json capabilities
 tplinkctl --json tools
 tplinkctl-mcp
+tplinkctl --json events --tail 10
+tplinkctl --json state save --name before-change
 tplinkctl --json doctor --deep
 tplinkctl --json health
 tplinkctl --json status
@@ -54,6 +56,9 @@ Prefer `TPLINK_PASSWORD` or the interactive password prompt over `--password`, s
 tplinkctl firmware
 tplinkctl capabilities
 tplinkctl tools
+tplinkctl events --tail 20
+tplinkctl state save --name baseline
+tplinkctl state diff
 tplinkctl health
 tplinkctl status
 tplinkctl snapshot
@@ -134,9 +139,25 @@ Profiles can also be set with `TPLINK_PROFILE=read-only`, `device-admin`, `netwo
 Plan mutating device operations before executing them:
 
 ```bash
-tplinkctl --json --no-input device reserve Pixel --plan
-tplinkctl --json --no-input device block Pixel --plan --enforce
+tplinkctl --json --reason "pin phone IP" --no-input device reserve Pixel --plan
+tplinkctl --json --reason "pause phone network access" --no-input device block Pixel --plan --enforce
 tplinkctl --json --no-input device unblock Pixel --plan
+```
+
+Plans and mutations are appended to `~/.config/tplink-admin/events.jsonl`:
+
+```bash
+tplinkctl --json events --tail 20
+tplinkctl --json events --operation device.block
+```
+
+Save and compare redacted router state snapshots:
+
+```bash
+tplinkctl --json --no-input state save --name before
+tplinkctl --json --no-input state save --name after
+tplinkctl --json state show --list
+tplinkctl --json state diff --before before --after after
 ```
 
 `tools` prints a local tool schema that agent frameworks can map to shell commands:
@@ -184,7 +205,7 @@ export TPLINK_MCP_PROFILE=device-admin
 tplinkctl-mcp
 ```
 
-Available tool methods include `router_status`, `device_list`, `device_show`, `device_plan`, `device_block`, `device_unblock`, `doctor_deep`, and `watch`. Mutating MCP tools require `confirm=true` in addition to the CLI's router-side safeguards.
+Available tool methods include `router_status`, `device_list`, `device_show`, `device_plan`, `device_block`, `device_unblock`, `doctor_deep`, `watch`, `audit_tail`, `state_snapshot`, and `state_diff`. Mutating MCP tools require `confirm=true` in addition to the CLI's router-side safeguards.
 
 The server speaks the core JSON-RPC methods used by MCP clients:
 

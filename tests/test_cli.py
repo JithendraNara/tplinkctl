@@ -206,6 +206,17 @@ def run_cli(argv):
     return out.getvalue()
 
 
+def run_cli_in_config(tmp, argv, router=None):
+    out = io.StringIO()
+    with (
+        contextlib.redirect_stdout(out),
+        patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp}, clear=False),
+        patch.object(cli, "build_router", return_value=router or FakeRouter()),
+    ):
+        cli.main(argv)
+    return out.getvalue()
+
+
 class CliTests(unittest.TestCase):
     def test_health_reports_double_nat(self):
         output = run_cli(["--json", "--no-input", "health"])
@@ -341,6 +352,33 @@ class CliTests(unittest.TestCase):
         self.assertEqual(data[0]["target"], "devices")
         self.assertEqual(data[0]["sequence"], 1)
         self.assertEqual(data[0]["data"][0]["hostname"], "debian_linux")
+
+    def test_device_plan_writes_audit_event_with_reason(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = run_cli_in_config(
+                tmp,
+                ["--json", "--reason", "testing audit", "--no-input", "device", "block", "debian", "--plan"],
+            )
+            plan = json.loads(output)
+            self.assertEqual(plan["action"], "device.block")
+            events = json.loads(run_cli_in_config(tmp, ["--json", "events", "--tail", "5"]))
+        self.assertEqual(events["count"], 1)
+        self.assertEqual(events["events"][0]["event"], "plan")
+        self.assertEqual(events["events"][0]["operation"], "device.block")
+        self.assertEqual(events["events"][0]["reason"], "testing audit")
+
+    def test_state_save_show_and_diff(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            saved_one = json.loads(run_cli_in_config(tmp, ["--json", "--no-input", "state", "save", "--name", "one"]))
+            saved_two = json.loads(run_cli_in_config(tmp, ["--json", "--no-input", "state", "save", "--name", "two"]))
+            shown = json.loads(run_cli_in_config(tmp, ["--json", "state", "show", "one"]))
+            diff = json.loads(run_cli_in_config(tmp, ["--json", "state", "diff", "--before", "one", "--after", "two"]))
+        self.assertTrue(saved_one["saved"].endswith("one.json"))
+        self.assertTrue(saved_two["saved"].endswith("two.json"))
+        self.assertEqual(shown["snapshot_name"], "one")
+        self.assertEqual(diff["before"], "one")
+        self.assertEqual(diff["after"], "two")
+        self.assertGreaterEqual(diff["change_count"], 1)
 
     def test_deep_doctor_runs_read_only_probes(self):
         out = io.StringIO()

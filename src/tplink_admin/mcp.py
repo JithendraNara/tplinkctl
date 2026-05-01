@@ -124,6 +124,31 @@ def argv_watch(arguments: dict[str, Any]) -> list[str]:
     return argv
 
 
+def argv_audit_tail(arguments: dict[str, Any]) -> list[str]:
+    argv = base_argv() + ["events", "--tail", str(positive_int(arguments, "tail", 20))]
+    if operation := arguments.get("operation"):
+        argv.extend(["--operation", str(operation)])
+    return argv
+
+
+def argv_state_snapshot(arguments: dict[str, Any]) -> list[str]:
+    argv = base_argv() + ["state", "save"]
+    if name := arguments.get("name"):
+        argv.extend(["--name", str(name)])
+    return argv
+
+
+def argv_state_diff(arguments: dict[str, Any]) -> list[str]:
+    argv = base_argv() + ["state", "diff"]
+    if before := arguments.get("before"):
+        argv.extend(["--before", str(before)])
+    if after := arguments.get("after"):
+        argv.extend(["--after", str(after)])
+    if limit := arguments.get("limit"):
+        argv.extend(["--limit", str(positive_int(arguments, "limit", int(limit)))])
+    return argv
+
+
 TOOL_BUILDERS: dict[str, Callable[[dict[str, Any]], list[str]]] = {
     "router_status": argv_status,
     "device_list": argv_devices,
@@ -133,6 +158,9 @@ TOOL_BUILDERS: dict[str, Callable[[dict[str, Any]], list[str]]] = {
     "device_unblock": argv_device_unblock,
     "doctor_deep": argv_doctor_deep,
     "watch": argv_watch,
+    "audit_tail": argv_audit_tail,
+    "state_snapshot": argv_state_snapshot,
+    "state_diff": argv_state_diff,
 }
 
 

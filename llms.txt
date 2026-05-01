@@ -7,6 +7,9 @@
 - Capabilities manifest: `tplinkctl --json capabilities`
 - Tool schema manifest: `tplinkctl --json tools`
 - Stdio tool server: `TPLINK_MCP_PROFILE=device-admin tplinkctl-mcp`
+- Audit log: `tplinkctl --json events --tail 20`
+- State snapshot: `tplinkctl --json --no-input state save --name baseline`
+- State diff: `tplinkctl --json state diff`
 - Read-only router probe: `tplinkctl --json --no-input doctor --deep`
 - Broad state snapshot: `tplinkctl --json --no-input snapshot`
 - Current status: `tplinkctl --json --no-input status`
@@ -22,6 +25,7 @@
 - Use `--profile read-only`, `device-admin`, `network-admin`, or `dangerous` for coarse session permissions.
 - Mutating device commands require `--yes`.
 - Use `--plan` before mutating device state.
+- Use `--reason "short explanation"` on plans and mutations; it is written to the audit log.
 - MCP mutations require `confirm=true`; call `device_plan` first.
 - Authenticated router sessions use a local lock by default.
 

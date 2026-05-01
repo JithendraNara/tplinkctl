@@ -29,6 +29,7 @@ Do not echo `TPLINK_PASSWORD` in logs, reports, prompts, or shell snippets.
 5. Run `tplinkctl --json --no-input status` for a human-sized router summary.
 6. Run `tplinkctl --json --no-input devices --active` before making device decisions.
 7. Use `tplinkctl --json --no-input device <query>` to resolve an exact hostname, IP, or MAC before mutating.
+8. Save state before meaningful changes: `tplinkctl --json --no-input state save --name before-change`.
 
 ## Guardrails
 
@@ -62,9 +63,18 @@ Profiles:
 Mutating commands should include a rollback in the agent plan:
 
 ```bash
-tplinkctl --json --no-input device block Pixel --plan --enforce
-tplinkctl --json --no-input device block Pixel --yes
-tplinkctl --json --no-input device unblock Pixel --yes
+tplinkctl --json --reason "pause network access" --no-input device block Pixel --plan --enforce
+tplinkctl --json --reason "pause network access" --no-input device block Pixel --yes
+tplinkctl --json --reason "restore network access" --no-input device unblock Pixel --yes
+```
+
+After mutating, verify and inspect the audit log:
+
+```bash
+tplinkctl --json --no-input device Pixel
+tplinkctl --json events --tail 20
+tplinkctl --json --no-input state save --name after-change
+tplinkctl --json state diff --before before-change --after after-change
 ```
 
 ## Agent-Oriented Capabilities
@@ -83,6 +93,8 @@ High confidence:
 - `internet.speedtest`: external Cloudflare speed test
 - `agent.tools`: local tool schemas for agent wrappers
 - `agent.watch`: repeated read-only monitoring samples
+- `agent.events`: append-only local audit log for plans and mutations
+- `agent.state`: redacted local state snapshots and diffs
 
 Known risky or experimental:
 
@@ -123,6 +135,9 @@ MCP tools:
 - `device_unblock`
 - `doctor_deep`
 - `watch`
+- `audit_tail`
+- `state_snapshot`
+- `state_diff`
 
 Mutating MCP tools require `confirm=true`. Agents should call `device_plan` first, show the target MAC/IP and rollback, then call the mutation only when authorized.
 

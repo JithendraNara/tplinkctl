@@ -70,6 +70,7 @@ READ_COMMANDS = {
     "devices",
     "doctor",
     "endpoints",
+    "events",
     "firmware",
     "health",
     "ipv4",
@@ -79,6 +80,7 @@ READ_COMMANDS = {
     "routes",
     "snapshot",
     "speed",
+    "state",
     "status",
     "tools",
     "wan",
@@ -106,6 +108,8 @@ READ_OPERATIONS = {
     "discovery.endpoints",
     "agent.capabilities",
     "agent.doctor",
+    "agent.events",
+    "agent.state",
     "agent.tools",
     "agent.watch",
     "advanced.read",
@@ -188,6 +192,8 @@ KNOWN_QUIRKS = [
 ]
 CAPABILITIES = [
     {"id": "agent.capabilities", "command": "capabilities", "type": "agent_discovery", "requires_auth": False, "output": ["json", "plain"], "status": "supported"},
+    {"id": "agent.events", "command": "events", "type": "audit_read", "requires_auth": False, "output": ["json", "plain"], "status": "supported"},
+    {"id": "agent.state", "command": "state <save|show|diff>", "type": "local_state", "requires_auth": "save only", "output": ["json", "plain"], "status": "supported"},
     {"id": "agent.tools", "command": "tools", "type": "agent_discovery", "requires_auth": False, "output": ["json", "plain"], "status": "supported"},
     {"id": "agent.watch", "command": "watch <status|devices|speed|health>", "type": "read_monitor", "requires_auth": True, "output": ["json", "jsonl", "plain"], "status": "supported"},
     {"id": "router.firmware", "command": "firmware", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
@@ -247,6 +253,14 @@ def config_path() -> Path:
 
 def lock_path() -> Path:
     return config_dir() / "session.lock"
+
+
+def events_path() -> Path:
+    return config_dir() / "events.jsonl"
+
+
+def state_dir() -> Path:
+    return config_dir() / "state"
 
 
 @contextmanager
@@ -317,6 +331,7 @@ def print_json(value: Any) -> None:
 
 
 def emit(args: argparse.Namespace, value: Any) -> None:
+    audit_if_needed(args, value)
     output = getattr(args, "output", None) or output_from_env()
     if output == "json":
         print_json(value)
@@ -412,6 +427,117 @@ def redact_value(key: str, value: Any) -> Any:
 
 def redact_mapping(value: dict[str, Any]) -> dict[str, Any]:
     return {key: redact_value(key, item) for key, item in value.items()}
+
+
+def append_jsonl(path: Path, row: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(to_plain(row), sort_keys=True) + "\n")
+
+
+def read_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(item, dict):
+            rows.append(item)
+    return rows
+
+
+def audit_if_needed(args: argparse.Namespace, value: Any) -> None:
+    if getattr(args, "_audit_skip", False):
+        return
+    operation = operation_id(args)
+    plain = to_plain(value)
+    planned = isinstance(plain, dict) and bool(plain.get("plan"))
+    should_log = planned or operation in MUTATION_OPERATIONS
+    if not should_log:
+        return
+    event = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "event": "plan" if planned else "execute",
+        "operation": operation,
+        "command": getattr(args, "command", ""),
+        "profile": getattr(args, "profile", None) or os.getenv(PROFILE_ENV),
+        "reason": getattr(args, "reason", None),
+        "ok": True,
+        "result": redact_value("result", plain),
+    }
+    append_jsonl(events_path(), event)
+
+
+def snapshot_payload(router) -> dict[str, Any]:
+    firmware = to_plain(router.get_firmware())
+    status = to_plain(router.get_status())
+    ipv4 = to_plain(router.get_ipv4_status())
+    wifi = read_wifi_info(router)
+    payload = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "model": firmware.get("model"),
+        "hardware_version": firmware.get("hardware_version"),
+        "firmware_version": firmware.get("firmware_version"),
+        "router": status_summary(status),
+        "wan": wan_summary(status, ipv4),
+        "wifi": wifi,
+        "devices": device_rows(status),
+        "reservations": safe_call("reservations", router.get_ipv4_reservations),
+        "health": health_from(status, firmware, ipv4),
+    }
+    return redact_value("snapshot", payload)
+
+
+def state_file(name: str) -> Path:
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", name.strip()).strip("-")
+    if not safe:
+        raise SystemExit("State snapshot name cannot be empty.")
+    if not safe.endswith(".json"):
+        safe += ".json"
+    return state_dir() / safe
+
+
+def list_state_files() -> list[Path]:
+    if not state_dir().exists():
+        return []
+    return sorted(state_dir().glob("*.json"), key=lambda path: path.stat().st_mtime)
+
+
+def load_state_snapshot(name: str | None = None) -> dict[str, Any]:
+    if name:
+        path = state_file(name)
+    else:
+        files = list_state_files()
+        if not files:
+            raise SystemExit("No saved state snapshots.")
+        path = files[-1]
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def diff_values(before: Any, after: Any, prefix: str = "") -> list[dict[str, Any]]:
+    changes: list[dict[str, Any]] = []
+    if isinstance(before, dict) and isinstance(after, dict):
+        for key in sorted(set(before) | set(after)):
+            path = f"{prefix}.{key}" if prefix else str(key)
+            if key not in before:
+                changes.append({"path": path, "type": "added", "after": after[key]})
+            elif key not in after:
+                changes.append({"path": path, "type": "removed", "before": before[key]})
+            else:
+                changes.extend(diff_values(before[key], after[key], path))
+        return changes
+    if isinstance(before, list) and isinstance(after, list):
+        if before != after:
+            changes.append({"path": prefix, "type": "changed", "before_count": len(before), "after_count": len(after)})
+        return changes
+    if before != after:
+        changes.append({"path": prefix, "type": "changed", "before": before, "after": after})
+    return changes
 
 
 def normalize_api_path(path: str) -> str:
@@ -955,6 +1081,42 @@ def tool_manifest() -> dict[str, Any]:
             "read_only": True,
             "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
         },
+        {
+            "name": "audit_tail",
+            "description": "Read recent local audit events from the append-only JSONL log.",
+            "command": ["tplinkctl", "--json", "events", "--tail", "<limit>"],
+            "read_only": True,
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "tail": {"type": "integer", "minimum": 1},
+                    "operation": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "state_snapshot",
+            "description": "Save a redacted local router state snapshot.",
+            "command": ["tplinkctl", "--json", "--no-input", "state", "save", "--name", "<name>"],
+            "read_only": True,
+            "input_schema": {"type": "object", "properties": {"name": {"type": "string"}}, "additionalProperties": False},
+        },
+        {
+            "name": "state_diff",
+            "description": "Diff two saved local state snapshots.",
+            "command": ["tplinkctl", "--json", "state", "diff"],
+            "read_only": True,
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "before": {"type": "string"},
+                    "after": {"type": "string"},
+                    "limit": {"type": "integer", "minimum": 1},
+                },
+                "additionalProperties": False,
+            },
+        },
     ]
     return {
         "name": "tplinkctl-tools",
@@ -1185,21 +1347,7 @@ def cmd_firmware(args: argparse.Namespace) -> None:
 
 def cmd_status(args: argparse.Namespace) -> None:
     def action(router):
-        firmware = to_plain(router.get_firmware())
-        status = to_plain(router.get_status())
-        ipv4 = to_plain(router.get_ipv4_status())
-        wifi = read_wifi_info(router)
-        return {
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-            "model": firmware.get("model"),
-            "hardware_version": firmware.get("hardware_version"),
-            "firmware_version": firmware.get("firmware_version"),
-            "router": status_summary(status),
-            "wan": wan_summary(status, ipv4),
-            "wifi": wifi,
-            "devices": device_rows(status),
-            "health": health_from(status, firmware, ipv4),
-        }
+        return snapshot_payload(router)
 
     emit(args, with_session(args, action))
 
@@ -1730,6 +1878,61 @@ def cmd_tools(args: argparse.Namespace) -> None:
     emit(args, tool_manifest())
 
 
+def cmd_events(args: argparse.Namespace) -> None:
+    rows = read_jsonl(events_path())
+    if args.operation:
+        rows = [row for row in rows if row.get("operation") == args.operation]
+    if args.tail:
+        rows = rows[-args.tail:]
+    result = {"path": str(events_path()), "count": len(rows), "events": rows}
+    if args.path:
+        result = {"path": str(events_path())}
+    emit(args, result)
+
+
+def cmd_state_save(args: argparse.Namespace) -> None:
+    def action(router):
+        payload = snapshot_payload(router)
+        name = args.name or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        path = state_file(name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload["snapshot_name"] = path.stem
+        payload["snapshot_path"] = str(path)
+        path.write_text(json.dumps(to_plain(payload), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        return {"saved": str(path), "snapshot": payload}
+
+    emit(args, with_session(args, action))
+
+
+def cmd_state_show(args: argparse.Namespace) -> None:
+    if args.list:
+        rows = [
+            {"name": path.stem, "path": str(path), "modified": datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat()}
+            for path in list_state_files()
+        ]
+        emit(args, rows)
+        return
+    emit(args, load_state_snapshot(args.name))
+
+
+def cmd_state_diff(args: argparse.Namespace) -> None:
+    before_name = args.before
+    after_name = args.after
+    files = list_state_files()
+    if not before_name or not after_name:
+        if len(files) < 2:
+            raise SystemExit("Need at least two saved state snapshots or pass --before and --after.")
+        before = json.loads(files[-2].read_text(encoding="utf-8"))
+        after = json.loads(files[-1].read_text(encoding="utf-8"))
+        before_name = files[-2].stem
+        after_name = files[-1].stem
+    else:
+        before = load_state_snapshot(before_name)
+        after = load_state_snapshot(after_name)
+    changes = diff_values(before, after)
+    emit(args, {"before": before_name, "after": after_name, "change_count": len(changes), "changes": changes[: args.limit]})
+
+
 def web_doctor_payload(args: argparse.Namespace) -> dict[str, Any]:
     args = apply_runtime_defaults(args)
     url = urljoin(args.host.rstrip("/") + "/", "webpages/index.html")
@@ -1860,6 +2063,7 @@ def operation_id(args: argparse.Namespace) -> str:
         "devices": "device.list",
         "doctor": "agent.doctor",
         "endpoints": "discovery.endpoints",
+        "events": "agent.events",
         "firmware": "router.firmware",
         "health": "router.health",
         "ipv4": "internet.wan",
@@ -1868,6 +2072,7 @@ def operation_id(args: argparse.Namespace) -> str:
         "routes": "discovery.routes",
         "snapshot": "router.snapshot",
         "speed": "internet.speed",
+        "state": "agent.state",
         "status": "router.status",
         "tools": "agent.tools",
         "wan": "internet.wan",
@@ -1940,6 +2145,7 @@ def add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--no-input", action="store_true", help="never prompt; fail if required input is missing")
     parser.add_argument("--no-lock", action="store_true", help="do not serialize authenticated router sessions")
     parser.add_argument("--profile", choices=sorted(POLICY_PROFILES), help="agent policy profile; also reads TPLINK_PROFILE")
+    parser.add_argument("--reason", help="short reason recorded in the audit log for plans and mutations")
     parser.add_argument("--enable-commands", help="comma-separated allowlist for agent use, e.g. status,leases")
     parser.add_argument("--disable-commands", help="comma-separated denylist for agent use, e.g. reboot,wifi")
 
@@ -2058,6 +2264,27 @@ def build_parser() -> argparse.ArgumentParser:
 
     tools = subparsers.add_parser("tools", help="print agent tool schemas for local CLI execution")
     tools.set_defaults(func=cmd_tools)
+
+    events = subparsers.add_parser("events", help="show append-only audit events")
+    events.add_argument("--tail", type=int, default=20, help="number of events to show")
+    events.add_argument("--operation", help="filter by operation id")
+    events.add_argument("--path", action="store_true", help="only print the audit log path")
+    events.set_defaults(func=cmd_events)
+
+    state = subparsers.add_parser("state", help="save, show, and diff redacted local state snapshots")
+    state_subparsers = state.add_subparsers(dest="state_command", required=True)
+    state_save = state_subparsers.add_parser("save", help="save a redacted router state snapshot")
+    state_save.add_argument("--name", help="snapshot name; defaults to UTC timestamp")
+    state_save.set_defaults(func=cmd_state_save)
+    state_show = state_subparsers.add_parser("show", help="show a saved state snapshot")
+    state_show.add_argument("name", nargs="?", help="snapshot name; defaults to latest")
+    state_show.add_argument("--list", action="store_true", help="list saved snapshots")
+    state_show.set_defaults(func=cmd_state_show)
+    state_diff = state_subparsers.add_parser("diff", help="diff two saved state snapshots")
+    state_diff.add_argument("--before", help="older snapshot name; defaults to previous")
+    state_diff.add_argument("--after", help="newer snapshot name; defaults to latest")
+    state_diff.add_argument("--limit", type=int, default=100, help="maximum changes to print")
+    state_diff.set_defaults(func=cmd_state_diff)
 
     doctor = subparsers.add_parser("doctor", help="check router web UI reachability and optional authenticated probes")
     doctor.add_argument("--deep", action="store_true", help="run read-only authenticated capability probes")

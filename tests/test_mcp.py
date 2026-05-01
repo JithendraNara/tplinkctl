@@ -19,6 +19,14 @@ def call_tool_with_fake_router(name, arguments=None):
             return mcp.call_tool(name, arguments or {})
 
 
+def call_tool_in_config(tmp, name, arguments=None):
+    with (
+        patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp}, clear=False),
+        patch.object(cli, "build_router", return_value=FakeRouter()),
+    ):
+        return mcp.call_tool(name, arguments or {})
+
+
 class McpTests(unittest.TestCase):
     def test_initialize_response(self):
         response = mcp.handle_request({"jsonrpc": "2.0", "id": 1, "method": "initialize"})
@@ -31,6 +39,8 @@ class McpTests(unittest.TestCase):
         self.assertIn("router_status", names)
         self.assertIn("device_plan", names)
         self.assertIn("watch", names)
+        self.assertIn("audit_tail", names)
+        self.assertIn("state_snapshot", names)
 
     def test_device_show_tool_uses_cli_json(self):
         result = call_tool_with_fake_router("device_show", {"query": "debian"})
@@ -69,6 +79,27 @@ class McpTests(unittest.TestCase):
         response = json.loads(body)
         self.assertEqual(response["id"], 4)
         self.assertIn("tools", response["result"])
+
+    def test_audit_tail_tool_reads_cli_events(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            call_tool_in_config(tmp, "device_plan", {"action": "block", "query": "debian"})
+            result = call_tool_in_config(tmp, "audit_tail", {"tail": 5})
+        payload = json.loads(result["content"][0]["text"])
+        self.assertEqual(payload["count"], 1)
+        self.assertEqual(payload["events"][0]["operation"], "device.block")
+
+    def test_state_snapshot_and_diff_tools(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            first = call_tool_in_config(tmp, "state_snapshot", {"name": "first"})
+            second = call_tool_in_config(tmp, "state_snapshot", {"name": "second"})
+            diff = call_tool_in_config(tmp, "state_diff", {"before": "first", "after": "second"})
+        first_payload = json.loads(first["content"][0]["text"])
+        second_payload = json.loads(second["content"][0]["text"])
+        diff_payload = json.loads(diff["content"][0]["text"])
+        self.assertTrue(first_payload["saved"].endswith("first.json"))
+        self.assertTrue(second_payload["saved"].endswith("second.json"))
+        self.assertEqual(diff_payload["before"], "first")
+        self.assertEqual(diff_payload["after"], "second")
 
 
 if __name__ == "__main__":
