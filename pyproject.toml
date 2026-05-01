@@ -17,6 +17,7 @@ dependencies = [
 [project.scripts]
 tplinkctl = "tplink_admin.cli:main"
 tpadmin = "tplink_admin.cli:main"
+tplinkctl-mcp = "tplink_admin.mcp:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

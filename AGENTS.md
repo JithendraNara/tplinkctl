@@ -15,6 +15,7 @@ TPLINK_HOST=http://192.168.0.1
 TPLINK_USERNAME=admin
 TPLINK_CLIENT=sg
 TPLINK_PASSWORD=...
+TPLINK_MCP_PROFILE=device-admin
 ```
 
 Do not echo `TPLINK_PASSWORD` in logs, reports, prompts, or shell snippets.
@@ -23,10 +24,11 @@ Do not echo `TPLINK_PASSWORD` in logs, reports, prompts, or shell snippets.
 
 1. Run `tplinkctl --json capabilities` to inspect available commands, risks, rollback hints, and known firmware issues.
 2. Run `tplinkctl --json tools` to discover the local tool surface and command mappings.
-3. Run `tplinkctl --json --no-input doctor --deep` to verify web UI reachability, authentication, and read-only endpoint health.
-4. Run `tplinkctl --json --no-input status` for a human-sized router summary.
-5. Run `tplinkctl --json --no-input devices --active` before making device decisions.
-6. Use `tplinkctl --json --no-input device <query>` to resolve an exact hostname, IP, or MAC before mutating.
+3. Start `tplinkctl-mcp` when the agent framework supports stdio JSON-RPC tools.
+4. Run `tplinkctl --json --no-input doctor --deep` to verify web UI reachability, authentication, and read-only endpoint health.
+5. Run `tplinkctl --json --no-input status` for a human-sized router summary.
+6. Run `tplinkctl --json --no-input devices --active` before making device decisions.
+7. Use `tplinkctl --json --no-input device <query>` to resolve an exact hostname, IP, or MAC before mutating.
 
 ## Guardrails
 
@@ -104,6 +106,25 @@ The tool manifest is intended for wrappers that want MCP-like metadata without i
 ```bash
 tplinkctl --json tools | jq '.tools[] | {name, read_only, command, risk}'
 ```
+
+`tplinkctl-mcp` exposes the same tool surface over stdio JSON-RPC:
+
+```bash
+TPLINK_MCP_PROFILE=device-admin tplinkctl-mcp
+```
+
+MCP tools:
+
+- `router_status`
+- `device_list`
+- `device_show`
+- `device_plan`
+- `device_block`
+- `device_unblock`
+- `doctor_deep`
+- `watch`
+
+Mutating MCP tools require `confirm=true`. Agents should call `device_plan` first, show the target MAC/IP and rollback, then call the mutation only when authorized.
 
 `watch` can return an array or stream JSON Lines:
 

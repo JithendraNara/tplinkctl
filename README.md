@@ -31,6 +31,7 @@ export TPLINK_PASSWORD='your-local-router-password'
 tplinkctl doctor
 tplinkctl --json capabilities
 tplinkctl --json tools
+tplinkctl-mcp
 tplinkctl --json doctor --deep
 tplinkctl --json health
 tplinkctl --json status
@@ -172,6 +173,27 @@ tplinkctl --json capabilities | jq '.capabilities[] | {id, command, status, risk
 Authenticated commands are serialized with a local lock by default because the router login flow can reject overlapping sessions. Use `--no-lock` only when you are deliberately testing concurrency.
 
 See [AGENTS.md](AGENTS.md) and [llms.txt](llms.txt) for the agent playbook and discovery entrypoint.
+
+## MCP Server
+
+`tplinkctl-mcp` starts a small stdio JSON-RPC tool server for local agents. It exposes the same guarded operations as the CLI and uses `TPLINK_MCP_PROFILE` or `TPLINK_PROFILE` for policy enforcement:
+
+```bash
+export TPLINK_PASSWORD='your-local-router-password'
+export TPLINK_MCP_PROFILE=device-admin
+tplinkctl-mcp
+```
+
+Available tool methods include `router_status`, `device_list`, `device_show`, `device_plan`, `device_block`, `device_unblock`, `doctor_deep`, and `watch`. Mutating MCP tools require `confirm=true` in addition to the CLI's router-side safeguards.
+
+The server speaks the core JSON-RPC methods used by MCP clients:
+
+```text
+initialize
+tools/list
+tools/call
+ping
+```
 
 ## UI Discovery
 
