@@ -24,12 +24,13 @@ Do not echo `TPLINK_PASSWORD` in logs, reports, prompts, or shell snippets.
 
 1. Run `tplinkctl --json capabilities` to inspect available commands, risks, rollback hints, and known firmware issues.
 2. Run `tplinkctl --json tools` to discover the local tool surface and command mappings.
-3. Start `tplinkctl-mcp` when the agent framework supports stdio JSON-RPC tools.
-4. Run `tplinkctl --json --no-input doctor --deep` to verify web UI reachability, authentication, and read-only endpoint health.
-5. Run `tplinkctl --json --no-input status` for a human-sized router summary.
-6. Run `tplinkctl --json --no-input devices --active` before making device decisions.
-7. Use `tplinkctl --json --no-input device <query>` to resolve an exact hostname, IP, or MAC before mutating.
-8. Save state before meaningful changes: `tplinkctl --json --no-input state save --name before-change`.
+3. Run `tplinkctl --json demo` for a compact workflow report.
+4. Start `tplinkctl-mcp` when the agent framework supports stdio JSON-RPC tools.
+5. Run `tplinkctl --json --no-input doctor --deep` to verify web UI reachability, authentication, and read-only endpoint health.
+6. Run `tplinkctl --json --no-input status` for a human-sized router summary.
+7. Run `tplinkctl --json --no-input devices --active` before making device decisions.
+8. Use `tplinkctl --json --no-input device <query>` to resolve an exact hostname, IP, or MAC before mutating.
+9. Save state before meaningful changes: `tplinkctl --json --no-input state save --name before-change`.
 
 ## Guardrails
 
@@ -153,7 +154,10 @@ tplinkctl --no-input watch speed --count 10 --interval 1 --stream
 ```bash
 make test
 make smoke
+make demo
 tplinkctl --json capabilities
 tplinkctl --json tools
 tplinkctl --json --no-input doctor --deep
 ```
+
+See `examples/agent-runbook.md` for the full workflow and `examples/transcripts/` for redacted sample outputs.

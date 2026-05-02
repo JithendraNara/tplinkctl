@@ -31,6 +31,7 @@ export TPLINK_PASSWORD='your-local-router-password'
 tplinkctl doctor
 tplinkctl --json capabilities
 tplinkctl --json tools
+tplinkctl --json demo
 tplinkctl-mcp
 tplinkctl --json events --tail 10
 tplinkctl --json state save --name before-change
@@ -56,6 +57,7 @@ Prefer `TPLINK_PASSWORD` or the interactive password prompt over `--password`, s
 tplinkctl firmware
 tplinkctl capabilities
 tplinkctl tools
+tplinkctl demo
 tplinkctl events --tail 20
 tplinkctl state save --name baseline
 tplinkctl state diff
@@ -173,6 +175,15 @@ tplinkctl --json --no-input watch devices --active --count 5 --interval 2
 tplinkctl --no-input watch speed --count 10 --interval 1 --stream
 ```
 
+`demo` prints a safe workflow report for presentations and agent smoke tests:
+
+```bash
+tplinkctl --json demo
+tplinkctl --json --no-input demo --live --device Pixel --save-state --state-name demo
+```
+
+See [examples/agent-runbook.md](examples/agent-runbook.md) and [examples/transcripts](examples/transcripts) for a redacted demo story.
+
 `doctor` checks that the router web UI is reachable and reports page metadata without logging in:
 
 ```bash
@@ -250,6 +261,7 @@ Quote endpoint paths in shells like `zsh`, because `?` is a glob character.
 ```bash
 make test
 make smoke
+make demo
 make doctor
 ```
 

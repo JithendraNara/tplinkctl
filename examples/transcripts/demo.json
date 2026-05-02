@@ -1,0 +1,39 @@
+{
+  "generated_at": "2026-05-02T00:00:00+00:00",
+  "live": false,
+  "name": "tplinkctl agent demo",
+  "summary": {
+    "audit_log": "~/.config/tplink-admin/events.jsonl",
+    "capabilities": 32,
+    "mcp_server": "tplinkctl-mcp",
+    "profiles": [
+      "dangerous",
+      "device-admin",
+      "network-admin",
+      "read-only"
+    ],
+    "state_dir": "~/.config/tplink-admin/state",
+    "tools": 10
+  },
+  "safe_workflow": [
+    "discover capabilities",
+    "inspect tools",
+    "run deep doctor",
+    "save state snapshot",
+    "list devices",
+    "plan device mutation with rollback",
+    "inspect audit log"
+  ],
+  "tool_names": [
+    "router_status",
+    "device_list",
+    "device_show",
+    "device_plan",
+    "device_block",
+    "device_unblock",
+    "doctor_deep",
+    "audit_tail",
+    "state_snapshot",
+    "state_diff"
+  ]
+}

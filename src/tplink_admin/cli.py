@@ -66,6 +66,7 @@ READ_COMMANDS = {
     "capabilities",
     "clients",
     "config",
+    "demo",
     "device",
     "devices",
     "doctor",
@@ -107,6 +108,7 @@ READ_OPERATIONS = {
     "discovery.routes",
     "discovery.endpoints",
     "agent.capabilities",
+    "agent.demo",
     "agent.doctor",
     "agent.events",
     "agent.state",
@@ -192,6 +194,7 @@ KNOWN_QUIRKS = [
 ]
 CAPABILITIES = [
     {"id": "agent.capabilities", "command": "capabilities", "type": "agent_discovery", "requires_auth": False, "output": ["json", "plain"], "status": "supported"},
+    {"id": "agent.demo", "command": "demo [--live]", "type": "demo_report", "requires_auth": "live only", "output": ["json", "plain"], "status": "supported"},
     {"id": "agent.events", "command": "events", "type": "audit_read", "requires_auth": False, "output": ["json", "plain"], "status": "supported"},
     {"id": "agent.state", "command": "state <save|show|diff>", "type": "local_state", "requires_auth": "save only", "output": ["json", "plain"], "status": "supported"},
     {"id": "agent.tools", "command": "tools", "type": "agent_discovery", "requires_auth": False, "output": ["json", "plain"], "status": "supported"},
@@ -1128,6 +1131,95 @@ def tool_manifest() -> dict[str, Any]:
     }
 
 
+def demo_plan_for_device(router, query: str, enforce: bool = True) -> dict[str, Any]:
+    row = load_device(router, query)
+    payload = access_device_payload(router, row, ACCESS_BLACK_DEVICES)
+    existing = load_collection(router, ACCESS_BLACK_LIST)
+    duplicate = next((item for item in existing if normalize_mac(str(item.get("mac") or "")) == normalize_mac(row["mac"])), None)
+    status = access_control_status(router)
+    changes = ["device is already present in blacklist"] if duplicate else [f"add {payload['mac']} to access-control blacklist"]
+    if enforce:
+        changes.append("enable Access Control and set blacklist mode")
+    return mutation_plan(
+        action="device.block",
+        command=["tplinkctl", "device", "block", query, "--yes", "--enforce"] if enforce else ["tplinkctl", "device", "block", query, "--yes"],
+        target=row,
+        current={
+            "already_listed": duplicate is not None,
+            "access_control": {
+                "enabled": status["enabled"],
+                "mode": status["mode"],
+                "blacklist_count": len(status["blacklist"]),
+            },
+        },
+        changes=changes,
+        risk="device_connectivity_loss",
+        rollback=["tplinkctl", "device", "unblock", row["mac"], "--yes"],
+        notes=["This is a plan only; demo does not mutate router state."],
+    )
+
+
+def demo_report(args: argparse.Namespace) -> dict[str, Any]:
+    capabilities = capability_manifest()
+    tools = tool_manifest()
+    report: dict[str, Any] = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "name": "tplinkctl agent demo",
+        "live": bool(args.live),
+        "summary": {
+            "capabilities": len(capabilities["capabilities"]),
+            "tools": len(tools["tools"]),
+            "profiles": sorted(POLICY_PROFILES),
+            "mcp_server": "tplinkctl-mcp",
+            "audit_log": str(events_path()),
+            "state_dir": str(state_dir()),
+        },
+        "safe_workflow": [
+            "discover capabilities",
+            "inspect tools",
+            "run deep doctor",
+            "save state snapshot",
+            "list devices",
+            "plan device mutation with rollback",
+            "inspect audit log",
+        ],
+        "commands": [
+            "tplinkctl --json capabilities",
+            "tplinkctl --json tools",
+            "tplinkctl --json --no-input doctor --deep",
+            "tplinkctl --json --no-input state save --name before-change",
+            "tplinkctl --json --no-input devices --active",
+            "tplinkctl --json --reason 'demo plan' --no-input device block <device> --plan --enforce",
+            "tplinkctl --json events --tail 20",
+        ],
+        "docs": ["README.md", "AGENTS.md", "llms.txt", "examples/agent-runbook.md"],
+        "capability_sample": capabilities["capabilities"][:8],
+        "tool_names": [tool["name"] for tool in tools["tools"]],
+    }
+    if not args.live:
+        report["live_note"] = "Run `tplinkctl --json --no-input demo --live --device <name>` for live read-only router checks."
+        return report
+
+    def action(router):
+        live = {
+            "status": snapshot_payload(router),
+            "device_plan": demo_plan_for_device(router, args.device, enforce=True) if args.device else None,
+        }
+        if args.save_state:
+            name = args.state_name or f"demo-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+            path = state_file(name)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            snapshot = dict(live["status"])
+            snapshot["snapshot_name"] = path.stem
+            snapshot["snapshot_path"] = str(path)
+            path.write_text(json.dumps(to_plain(snapshot), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            live["state_saved"] = str(path)
+        return live
+
+    report["live_checks"] = with_session(args, action)
+    return report
+
+
 def probe_result(probe_id: str, capability: str, result: dict[str, Any], required: bool = True) -> dict[str, Any]:
     row: dict[str, Any] = {
         "id": probe_id,
@@ -1878,6 +1970,10 @@ def cmd_tools(args: argparse.Namespace) -> None:
     emit(args, tool_manifest())
 
 
+def cmd_demo(args: argparse.Namespace) -> None:
+    emit(args, demo_report(args))
+
+
 def cmd_events(args: argparse.Namespace) -> None:
     rows = read_jsonl(events_path())
     if args.operation:
@@ -2059,6 +2155,7 @@ def operation_id(args: argparse.Namespace) -> str:
     command = getattr(args, "command", "")
     direct = {
         "capabilities": "agent.capabilities",
+        "demo": "agent.demo",
         "clients": "device.list",
         "devices": "device.list",
         "doctor": "agent.doctor",
@@ -2264,6 +2361,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     tools = subparsers.add_parser("tools", help="print agent tool schemas for local CLI execution")
     tools.set_defaults(func=cmd_tools)
+
+    demo = subparsers.add_parser("demo", help="print a safe agent workflow demo report")
+    demo.add_argument("--live", action="store_true", help="include live read-only router checks")
+    demo.add_argument("--device", help="device query used for a live mutation plan")
+    demo.add_argument("--save-state", action="store_true", help="save a redacted state snapshot during live demo")
+    demo.add_argument("--state-name", help="state snapshot name for --save-state")
+    demo.set_defaults(func=cmd_demo)
 
     events = subparsers.add_parser("events", help="show append-only audit events")
     events.add_argument("--tail", type=int, default=20, help="number of events to show")

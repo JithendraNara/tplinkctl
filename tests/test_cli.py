@@ -353,6 +353,22 @@ class CliTests(unittest.TestCase):
         self.assertEqual(data[0]["sequence"], 1)
         self.assertEqual(data[0]["data"][0]["hostname"], "debian_linux")
 
+    def test_demo_offline_reports_agent_workflow(self):
+        output = run_cli(["--json", "demo"])
+        data = json.loads(output)
+        self.assertFalse(data["live"])
+        self.assertIn("tplinkctl-mcp", data["summary"]["mcp_server"])
+        self.assertIn("device_plan", data["tool_names"])
+        self.assertIn("examples/agent-runbook.md", data["docs"])
+
+    def test_demo_live_includes_read_only_plan(self):
+        output = run_cli(["--json", "--no-input", "demo", "--live", "--device", "debian"])
+        data = json.loads(output)
+        self.assertTrue(data["live"])
+        self.assertEqual(data["live_checks"]["device_plan"]["action"], "device.block")
+        self.assertFalse(data["live_checks"]["device_plan"]["will_mutate"])
+        self.assertEqual(data["live_checks"]["device_plan"]["target"]["hostname"], "debian_linux")
+
     def test_device_plan_writes_audit_event_with_reason(self):
         with tempfile.TemporaryDirectory() as tmp:
             output = run_cli_in_config(

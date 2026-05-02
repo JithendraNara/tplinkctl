@@ -1,4 +1,4 @@
-.PHONY: install test lint smoke doctor endpoints
+.PHONY: install test lint smoke doctor endpoints demo
 
 PYTHON ?= .venv/bin/python
 TPLINKCTL ?= .venv/bin/tplinkctl
@@ -22,3 +22,6 @@ doctor:
 
 endpoints:
 	$(TPLINKCTL) --json endpoints
+
+demo:
+	PYTHONPATH=src $(PYTHON) -m tplink_admin.cli --json demo

@@ -1,0 +1,25 @@
+{
+  "action": "device.block",
+  "changes": [
+    "add AA-BB-CC-DD-EE-FF to access-control blacklist",
+    "enable Access Control and set blacklist mode"
+  ],
+  "plan": true,
+  "requires_confirmation": "--yes",
+  "risk": "device_connectivity_loss",
+  "rollback": [
+    "tplinkctl",
+    "device",
+    "unblock",
+    "AA-BB-CC-DD-EE-FF",
+    "--yes"
+  ],
+  "target": {
+    "active": true,
+    "connection": "host_5g",
+    "hostname": "Example-Phone",
+    "ip": "192.168.0.42",
+    "mac": "AA-BB-CC-DD-EE-FF"
+  },
+  "will_mutate": false
+}

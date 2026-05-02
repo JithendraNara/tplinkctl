@@ -1,0 +1,15 @@
+{
+  "count": 1,
+  "events": [
+    {
+      "command": "device",
+      "event": "plan",
+      "ok": true,
+      "operation": "device.block",
+      "profile": "device-admin",
+      "reason": "demo plan only",
+      "timestamp": "2026-05-02T00:00:00+00:00"
+    }
+  ],
+  "path": "~/.config/tplink-admin/events.jsonl"
+}
