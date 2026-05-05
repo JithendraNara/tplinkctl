@@ -1,0 +1,68 @@
+name: Bug report
+description: Report a tplinkctl command, CLI, MCP, or documentation bug.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Do not include router passwords, Wi-Fi keys, tokens, or full unredacted config files.
+  - type: input
+    id: version
+    attributes:
+      label: tplinkctl version
+      description: Run `tplinkctl --version`.
+      placeholder: "tplinkctl 0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: router
+    attributes:
+      label: Router model and firmware
+      placeholder: "Archer BE3500, firmware 1.1.3 Build ..."
+    validations:
+      required: false
+  - type: textarea
+    id: command
+    attributes:
+      label: Command or tool call
+      description: Redact secrets. Prefer `--json --no-input` output.
+      render: shell
+      placeholder: "tplinkctl --json --no-input status"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Paste redacted output or error text.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Redact sensitive values before pasting.
+      render: shell
+      value: |
+        tplinkctl --json capabilities
+        tplinkctl --json tools
+        tplinkctl --json --no-input doctor --deep
+        make agent-doctor
+    validations:
+      required: false
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed router passwords, Wi-Fi keys, tokens, and private secrets.
+          required: true

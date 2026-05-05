@@ -1,0 +1,75 @@
+name: Router model support
+description: Request or report support for a TP-Link router model/firmware.
+title: "[Router]: "
+labels:
+  - router-support
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for router compatibility reports. Do not include router passwords, Wi-Fi keys, or unredacted exported config files.
+  - type: input
+    id: model
+    attributes:
+      label: Router model
+      placeholder: "Archer BE3500"
+    validations:
+      required: true
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware version
+      placeholder: "Archer BE3500 v1.0"
+    validations:
+      required: false
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware version
+      placeholder: "1.1.3 Build 20251120 rel.38341(5553)"
+    validations:
+      required: true
+  - type: dropdown
+    id: client
+    attributes:
+      label: Client mode
+      options:
+        - sg
+        - auto
+        - unknown
+    validations:
+      required: false
+  - type: textarea
+    id: working
+    attributes:
+      label: What works?
+      description: List commands that succeed.
+      placeholder: |
+        - tplinkctl --json firmware
+        - tplinkctl --json status
+        - tplinkctl --json devices --active
+    validations:
+      required: false
+  - type: textarea
+    id: failing
+    attributes:
+      label: What fails?
+      description: Paste redacted command output or errors.
+      render: text
+    validations:
+      required: false
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Redacted doctor output
+      description: Run `tplinkctl --json --no-input doctor --deep` and remove sensitive data before pasting.
+      render: json
+    validations:
+      required: false
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed router passwords, Wi-Fi keys, tokens, and private secrets.
+          required: true
