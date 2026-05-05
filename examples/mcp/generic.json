@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "tplinkctl": {
+      "command": "/absolute/path/to/repo/.venv/bin/python",
+      "args": [
+        "-m",
+        "tplink_admin.mcp"
+      ],
+      "cwd": "/absolute/path/to/repo",
+      "env": {
+        "PYTHONPATH": "/absolute/path/to/repo/src",
+        "TPLINK_HOST": "http://192.168.0.1",
+        "TPLINK_USERNAME": "admin",
+        "TPLINK_CLIENT": "sg",
+        "TPLINK_MCP_PROFILE": "device-admin",
+        "TPLINK_PASSWORD": "set-this-in-your-agent-secret-store"
+      }
+    }
+  }
+}

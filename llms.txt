@@ -53,6 +53,8 @@
 - CLI implementation: `src/tplink_admin/cli.py`
 - Endpoint notes: `docs/ENDPOINTS.md`
 - Agent playbook: `AGENTS.md`
+- Agent install guide: `docs/INSTALL_AGENT.md`
 - Demo runbook: `examples/agent-runbook.md`
+- MCP config examples: `examples/mcp/`
 - Redacted sample outputs: `examples/transcripts/`
 - Tests: `tests/test_cli.py`

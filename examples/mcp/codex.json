@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "tplinkctl-router": {
+      "command": "/Users/you/path/to/http-192-168-0-1-webpages/.venv/bin/python",
+      "args": [
+        "-m",
+        "tplink_admin.mcp"
+      ],
+      "cwd": "/Users/you/path/to/http-192-168-0-1-webpages",
+      "env": {
+        "PYTHONPATH": "/Users/you/path/to/http-192-168-0-1-webpages/src",
+        "TPLINK_HOST": "http://192.168.0.1",
+        "TPLINK_USERNAME": "admin",
+        "TPLINK_CLIENT": "sg",
+        "TPLINK_MCP_PROFILE": "device-admin",
+        "TPLINK_PASSWORD": "${TPLINK_PASSWORD}"
+      }
+    }
+  }
+}

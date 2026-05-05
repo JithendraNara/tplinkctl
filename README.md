@@ -227,6 +227,8 @@ tools/call
 ping
 ```
 
+See [docs/INSTALL_AGENT.md](docs/INSTALL_AGENT.md) for Codex/OpenClaw/Hermes-style setup notes and MCP config examples.
+
 ## UI Discovery
 
 Map router pages and mine API-looking endpoints from downloaded bundles:
@@ -262,6 +264,7 @@ Quote endpoint paths in shells like `zsh`, because `?` is a glob character.
 make test
 make smoke
 make demo
+make agent-doctor
 make doctor
 ```
 

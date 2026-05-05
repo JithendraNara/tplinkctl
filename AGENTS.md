@@ -161,3 +161,4 @@ tplinkctl --json --no-input doctor --deep
 ```
 
 See `examples/agent-runbook.md` for the full workflow and `examples/transcripts/` for redacted sample outputs.
+See `docs/INSTALL_AGENT.md` for install steps, MCP config examples, and `make agent-doctor`.
