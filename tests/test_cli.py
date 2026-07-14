@@ -32,6 +32,10 @@ class FakeRouter:
         self.access_enabled = "off"
         self.access_mode = "black"
         self.vpn_access = "off"
+        self.led_enabled = "on"
+        self.led_schedule_enabled = "on"
+        self.led_schedule_start = "23:00"
+        self.led_schedule_end = "07:00"
 
     def authorize(self):
         self.authorized = True
@@ -167,6 +171,36 @@ class FakeRouter:
                         }
                     ]
                 }
+        if base_path == cli.LED_GENERAL:
+            if data == "operation=read":
+                return {"enable": self.led_enabled, "ledst_support": "yes", "time_set": "yes"}
+            if "operation=write" in data:
+                self.led_enabled = "on" if "enable=on" in data else "off"
+                return None if kwargs.get("ignore_response") else {}
+        if base_path == cli.LED_SCHEDULE:
+            if data == "operation=read":
+                return {
+                    "enable": self.led_schedule_enabled,
+                    "ledpm_support": "yes",
+                    "time_start": self.led_schedule_start,
+                    "time_end": self.led_schedule_end,
+                }
+            if "operation=write" in data:
+                from urllib.parse import parse_qs
+
+                payload = parse_qs(data)
+                self.led_schedule_enabled = payload.get("enable", ["off"])[0]
+                self.led_schedule_start = payload.get("time_start", [self.led_schedule_start])[0]
+                self.led_schedule_end = payload.get("time_end", [self.led_schedule_end])[0]
+                return None if kwargs.get("ignore_response") else {}
+        if base_path == cli.FIRMWARE_LATEST:
+            return {
+                "latest_flag": "0",
+                "latest_version": "1.1.4 Build 20260701",
+                "detail": "Security and stability fixes.",
+            }
+        if base_path == cli.FIRMWARE_AUTO_UPDATE:
+            return {"enable": "on", "time": "03:00"}
         if base_path == "admin/vpn?form=vpn_user_list":
             if data == "operation=load":
                 return {"data": [{"name": "debian_linux", "mac": "48-BA-4E-40-B4-F4", "access": self.vpn_access}]}
@@ -218,6 +252,28 @@ def run_cli_in_config(tmp, argv, router=None):
 
 
 class CliTests(unittest.TestCase):
+    def test_firmware_check_is_read_only_and_normalized(self):
+        output = run_cli(["--json", "--no-input", "firmware-check"])
+        data = json.loads(output)
+        self.assertTrue(data["update"]["available"])
+        self.assertEqual(data["update"]["latest_version"], "1.1.4 Build 20260701")
+        self.assertTrue(data["auto_update"]["enabled"])
+        self.assertFalse(data["action_taken"])
+        self.assertTrue(all("operation=read" in path for path, _, _ in FakeRouter.last.requests))
+
+    def test_firmware_audit_does_not_infer_unknown_availability(self):
+        router = FakeRouter()
+        original_request = router.request
+
+        def request(path, data="", **kwargs):
+            if path.split("&operation=", 1)[0] == cli.FIRMWARE_LATEST:
+                return {"latest_flag": "unknown"}
+            return original_request(path, data, **kwargs)
+
+        router.request = request
+        data = cli.firmware_audit(router)
+        self.assertIsNone(data["update"]["available"])
+
     def test_health_reports_double_nat(self):
         output = run_cli(["--json", "--no-input", "health"])
         data = json.loads(output)
@@ -299,6 +355,40 @@ class CliTests(unittest.TestCase):
         self.assertEqual(data["networks"][0]["ssid"], "lab")
         self.assertNotIn("psk_key", data["networks"][0])
 
+    def test_led_status_reports_general_and_schedule(self):
+        data = json.loads(run_cli(["--json", "--no-input", "led", "status"]))
+        self.assertTrue(data["enabled"])
+        self.assertTrue(data["schedule"]["enabled"])
+        self.assertEqual(data["schedule"]["start"], "23:00")
+
+    def test_led_toggle_requires_confirmation_and_verifies(self):
+        with self.assertRaises(SystemExit) as raised:
+            run_cli(["--json", "--no-input", "led", "off"])
+        self.assertIn("--yes", str(raised.exception))
+        data = json.loads(run_cli(["--json", "--no-input", "led", "off", "--yes"]))
+        self.assertFalse(data["enabled"])
+
+    def test_led_schedule_plan_and_apply(self):
+        plan = json.loads(
+            run_cli(["--json", "--no-input", "led", "schedule", "on", "--start", "22:30", "--end", "06:15", "--plan"])
+        )
+        self.assertTrue(plan["plan"])
+        self.assertEqual(plan["action"], "router.led.set")
+        data = json.loads(
+            run_cli(["--json", "--no-input", "led", "schedule", "on", "--start", "22:30", "--end", "06:15", "--yes"])
+        )
+        self.assertEqual(data["schedule"]["start"], "22:30")
+        self.assertEqual(data["schedule"]["end"], "06:15")
+
+    def test_read_places_operation_in_url(self):
+        router = FakeRouter()
+        with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp}, clear=False), patch.object(cli, "build_router", return_value=router):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                cli.main(["--json", "--no-input", "read", "/admin/ledgeneral?form=setting"])
+        self.assertEqual(json.loads(out.getvalue())["enable"], "on")
+        self.assertEqual(router.requests[0][0], "admin/ledgeneral?form=setting&operation=read")
+
     def test_capabilities_reports_agent_contract(self):
         output = run_cli(["--json", "capabilities"])
         data = json.loads(output)
@@ -308,8 +398,12 @@ class CliTests(unittest.TestCase):
         self.assertIn("device-admin", data["policy_profiles"])
         device_block = next(item for item in data["capabilities"] if item["id"] == "device.block")
         device_vpn = next(item for item in data["capabilities"] if item["id"] == "device.vpn")
+        led_status = next(item for item in data["capabilities"] if item["id"] == "router.led.status")
+        vpn_client_status = next(item for item in data["capabilities"] if item["id"] == "vpn.client_status")
         self.assertEqual(device_block["requires_confirmation"], "--yes")
         self.assertEqual(device_vpn["status"], "firmware_error")
+        self.assertEqual(led_status["status"], "live_verified")
+        self.assertEqual(vpn_client_status["status"], "firmware_error")
         self.assertIn("--json", data["agent_contract"]["prefer"])
 
     def test_tools_reports_agent_tool_schemas(self):

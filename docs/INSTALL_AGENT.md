@@ -83,6 +83,10 @@ MCP methods:
 Tools:
 
 - `router_status`
+- `firmware_audit`
+- `led_status`
+- `led_plan`
+- `led_set`
 - `device_list`
 - `device_show`
 - `device_plan`
@@ -94,7 +98,7 @@ Tools:
 - `state_snapshot`
 - `state_diff`
 
-Mutating tools require `confirm=true`. Agents should call `device_plan` first and show the rollback command before calling a mutation tool.
+Mutating tools require `confirm=true`. Agents should call `device_plan` or `led_plan` first and show the rollback command before calling a mutation tool.
 
 ## Config Examples
 

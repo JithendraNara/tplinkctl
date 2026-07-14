@@ -4,7 +4,7 @@
   "name": "tplinkctl agent demo",
   "summary": {
     "audit_log": "~/.config/tplink-admin/events.jsonl",
-    "capabilities": 32,
+    "capabilities": 35,
     "mcp_server": "tplinkctl-mcp",
     "profiles": [
       "dangerous",
@@ -13,7 +13,7 @@
       "read-only"
     ],
     "state_dir": "~/.config/tplink-admin/state",
-    "tools": 10
+    "tools": 14
   },
   "safe_workflow": [
     "discover capabilities",
@@ -26,6 +26,10 @@
   ],
   "tool_names": [
     "router_status",
+    "firmware_audit",
+    "led_status",
+    "led_plan",
+    "led_set",
     "device_list",
     "device_show",
     "device_plan",

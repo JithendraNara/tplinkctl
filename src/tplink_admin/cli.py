@@ -73,9 +73,11 @@ READ_COMMANDS = {
     "endpoints",
     "events",
     "firmware",
+    "firmware-check",
     "health",
     "ipv4",
     "leases",
+    "led",
     "read",
     "reservations",
     "routes",
@@ -96,11 +98,13 @@ READ_OPERATIONS = {
     "device.list",
     "device.access.status",
     "router.firmware",
+    "router.firmware.audit",
     "router.health",
     "router.status",
     "router.snapshot",
     "internet.wan",
     "internet.speed",
+    "router.led.status",
     "wifi.status",
     "wifi.info",
     "vpn.status",
@@ -128,6 +132,7 @@ MUTATION_OPERATIONS = {
     "vpn.toggle",
     "vpn.client_toggle",
     "router.reboot",
+    "router.led.set",
     "advanced.raw",
 }
 POLICY_PROFILES = {
@@ -179,6 +184,10 @@ ACCESS_WHITE_LIST = "admin/access_control?form=white_list"
 ACCESS_BLACK_DEVICES = "admin/access_control?form=black_devices"
 ACCESS_WHITE_DEVICES = "admin/access_control?form=white_devices"
 DHCP_RESERVATION = "admin/dhcps?form=reservation"
+LED_GENERAL = "admin/ledgeneral?form=setting"
+LED_SCHEDULE = "admin/ledpm?form=setting"
+FIRMWARE_LATEST = "admin/cloud_account?form=cloud_upgrade"
+FIRMWARE_AUTO_UPDATE = "admin/firmware?form=auto_upgrade"
 KNOWN_QUIRKS = [
     {
         "id": "sg-operation-placement",
@@ -191,6 +200,12 @@ KNOWN_QUIRKS = [
         "summary": "The live router returns a Lua dispatcher error for admin/vpn?form=vpn_user_list on this firmware.",
         "affects": ["device.vpn"],
     },
+    {
+        "id": "vpn-client-status-response-error",
+        "applies_to": ["Archer BE3500 firmware 1.1.3 Build 20251120"],
+        "summary": "The live router returns an unreadable response for the VPN client status endpoint on this firmware.",
+        "affects": ["vpn.client_status"],
+    },
 ]
 CAPABILITIES = [
     {"id": "agent.capabilities", "command": "capabilities", "type": "agent_discovery", "requires_auth": False, "output": ["json", "plain"], "status": "supported"},
@@ -200,9 +215,12 @@ CAPABILITIES = [
     {"id": "agent.tools", "command": "tools", "type": "agent_discovery", "requires_auth": False, "output": ["json", "plain"], "status": "supported"},
     {"id": "agent.watch", "command": "watch <status|devices|speed|health>", "type": "read_monitor", "requires_auth": True, "output": ["json", "jsonl", "plain"], "status": "supported"},
     {"id": "router.firmware", "command": "firmware", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
+    {"id": "router.firmware.audit", "command": "firmware-check", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported", "note": "Checks update availability and auto-update configuration; never installs firmware."},
     {"id": "router.health", "command": "health", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
     {"id": "router.status", "command": "status", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
     {"id": "router.snapshot", "command": "snapshot", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
+    {"id": "router.led.status", "command": "led status", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "live_verified"},
+    {"id": "router.led.set", "command": "led <on|off|schedule> --yes", "type": "mutation", "requires_auth": True, "requires_confirmation": "--yes", "risk": "physical_indicator_change", "rollback": "Run the inverse LED command or restore the previous schedule.", "status": "supported"},
     {"id": "internet.wan", "command": "wan", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
     {"id": "internet.speed", "command": "speed", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
     {"id": "internet.speedtest", "command": "speedtest", "type": "external_network_test", "requires_auth": False, "output": ["json", "plain"], "status": "supported"},
@@ -218,7 +236,7 @@ CAPABILITIES = [
     {"id": "device.unblock", "command": "device unblock <query> --yes", "type": "mutation", "requires_auth": True, "requires_confirmation": "--yes", "risk": "device_access_policy", "rollback": "device block <query> --yes", "status": "live_verified"},
     {"id": "device.vpn", "command": "device vpn <query> <on|off> --yes", "type": "mutation", "requires_auth": True, "requires_confirmation": "--yes", "risk": "routing_change", "status": "firmware_error", "note": "Known to fail on the tested Archer BE3500 firmware."},
     {"id": "vpn.status", "command": "vpn-status", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
-    {"id": "vpn.client_status", "command": "vpn-client-status", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
+    {"id": "vpn.client_status", "command": "vpn-client-status", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "firmware_error", "note": "Known to fail on the tested Archer BE3500 firmware."},
     {"id": "vpn.client_toggle", "command": "vpn-client <on|off>", "type": "mutation", "requires_auth": True, "risk": "routing_change", "status": "supported"},
     {"id": "router.reboot", "command": "reboot --yes", "type": "mutation", "requires_auth": True, "requires_confirmation": "--yes", "risk": "router_reboot", "status": "supported"},
     {"id": "discovery.routes", "command": "routes", "type": "local_discovery", "requires_auth": False, "output": ["json", "plain"], "status": "supported"},
@@ -1023,6 +1041,55 @@ def tool_manifest() -> dict[str, Any]:
             "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
         },
         {
+            "name": "firmware_audit",
+            "description": "Check current firmware, update availability, and auto-update settings without installing anything.",
+            "command": ["tplinkctl", "--json", "--no-input", "firmware-check"],
+            "read_only": True,
+            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+        {
+            "name": "led_status",
+            "description": "Return router LED and nightly LED-off schedule status.",
+            "command": ["tplinkctl", "--json", "--no-input", "led", "status"],
+            "read_only": True,
+            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+        {
+            "name": "led_plan",
+            "description": "Plan a router LED or nightly schedule change without changing router state.",
+            "command": ["tplinkctl", "--json", "--no-input", "led", "<action>", "--plan"],
+            "read_only": True,
+            "input_schema": {
+                "type": "object",
+                "required": ["action"],
+                "properties": {
+                    "action": {"type": "string", "enum": ["on", "off", "schedule"]},
+                    "enabled": {"type": "boolean"},
+                    "start": {"type": "string", "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$"},
+                    "end": {"type": "string", "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$"},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "led_set",
+            "description": "Change router LEDs or the nightly LED-off schedule. Requires explicit confirmation and should be preceded by led_plan.",
+            "command": ["tplinkctl", "--json", "--no-input", "led", "<action>", "--yes"],
+            "read_only": False,
+            "risk": "physical_indicator_change",
+            "input_schema": {
+                "type": "object",
+                "required": ["action"],
+                "properties": {
+                    "action": {"type": "string", "enum": ["on", "off", "schedule"]},
+                    "enabled": {"type": "boolean"},
+                    "start": {"type": "string", "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$"},
+                    "end": {"type": "string", "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$"},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
             "name": "device_list",
             "description": "List connected devices with hostname, IP, MAC, speed, usage, and connection type.",
             "command": ["tplinkctl", "--json", "--no-input", "devices"],
@@ -1392,6 +1459,12 @@ def vpn_arg(value: str) -> VPN:
     raise argparse.ArgumentTypeError(f"unknown vpn `{value}`; choose one of: {choices}")
 
 
+def time_arg(value: str) -> str:
+    if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value):
+        raise argparse.ArgumentTypeError("expected 24-hour time in HH:MM format")
+    return value
+
+
 def password_from_args(args: argparse.Namespace) -> str:
     password = args.password or os.getenv("TPLINK_PASSWORD")
     if password:
@@ -1435,6 +1508,66 @@ def with_session(args: argparse.Namespace, action):
 
 def cmd_firmware(args: argparse.Namespace) -> None:
     emit(args, with_session(args, lambda router: router.get_firmware()))
+
+
+def firmware_audit(router) -> dict[str, Any]:
+    current = to_plain(router.get_firmware())
+    latest_probe = safe_call(
+        "latest",
+        lambda: api_request(
+            router,
+            operation_path(FIRMWARE_LATEST, "read"),
+            "operation=read",
+            ignore_errors=True,
+        ),
+    )
+    auto_update_probe = safe_call(
+        "auto_update",
+        lambda: api_request(
+            router,
+            operation_path(FIRMWARE_AUTO_UPDATE, "read"),
+            "operation=read",
+            ignore_errors=True,
+        ),
+    )
+
+    latest = latest_probe.get("data") if latest_probe["ok"] else {}
+    auto_update = auto_update_probe.get("data") if auto_update_probe["ok"] else {}
+    latest = latest if isinstance(latest, dict) else {}
+    auto_update = auto_update if isinstance(auto_update, dict) else {}
+    latest_flag = latest.get("latest_flag")
+    is_latest = is_on(latest_flag)
+    update_available = None if is_latest is None else not is_latest
+    latest_checked = latest_probe["ok"] and latest_flag is not None
+    auto_update_checked = auto_update_probe["ok"] and "enable" in auto_update
+
+    warnings = []
+    if not latest_checked:
+        warnings.append("Could not check TP-Link's firmware update service.")
+    if not auto_update_checked:
+        warnings.append("Could not read the router's auto-update configuration.")
+
+    return {
+        "current": current,
+        "update": {
+            "available": update_available,
+            "latest_version": latest.get("latest_version"),
+            "detail": latest.get("detail"),
+            "checked": latest_checked,
+        },
+        "auto_update": {
+            "enabled": is_on(auto_update.get("enable")) if "enable" in auto_update else None,
+            "time": auto_update.get("time"),
+            "checked": auto_update_checked,
+        },
+        "warnings": warnings,
+        "safe": True,
+        "action_taken": False,
+    }
+
+
+def cmd_firmware_check(args: argparse.Namespace) -> None:
+    emit(args, with_session(args, firmware_audit))
 
 
 def cmd_status(args: argparse.Namespace) -> None:
@@ -1868,6 +2001,106 @@ def cmd_wifi_info(args: argparse.Namespace) -> None:
     emit(args, with_session(args, action))
 
 
+def led_status(router) -> dict[str, Any]:
+    general = to_plain(
+        api_request(router, operation_path(LED_GENERAL, "read"), "operation=read")
+    )
+    schedule = to_plain(
+        api_request(router, operation_path(LED_SCHEDULE, "read"), "operation=read")
+    )
+    return {
+        "enabled": is_on(general.get("enable")),
+        "supported": is_on(general.get("ledst_support")),
+        "time_set": is_on(general.get("time_set")),
+        "schedule": {
+            "enabled": is_on(schedule.get("enable")),
+            "supported": is_on(schedule.get("ledpm_support")),
+            "start": schedule.get("time_start"),
+            "end": schedule.get("time_end"),
+        },
+    }
+
+
+def cmd_led(args: argparse.Namespace) -> None:
+    def action(router):
+        current = led_status(router)
+        if args.led_action == "status":
+            return current
+
+        if args.led_action in {"on", "off"}:
+            expected = args.led_action == "on"
+            if args.plan:
+                return mutation_plan(
+                    action="router.led.set",
+                    command=["tplinkctl", "led", args.led_action, "--yes"],
+                    current=current,
+                    changes=[f"turn router LEDs {args.led_action}"],
+                    risk="physical_indicator_change",
+                    rollback=["tplinkctl", "led", "off" if expected else "on", "--yes"],
+                )
+            require_yes(args, f"turn router LEDs {args.led_action}")
+            api_request(
+                router,
+                operation_path(LED_GENERAL, "write"),
+                form_payload(operation="write", enable=on_off(expected)),
+                ignore_response=True,
+            )
+            updated = led_status(router)
+            if updated["enabled"] is not expected:
+                raise SystemExit(f"Router did not confirm LEDs {args.led_action}; current status is {updated}.")
+            return updated
+
+        schedule = current["schedule"]
+        expected = args.enabled
+        start = args.start or schedule.get("start")
+        end = args.end or schedule.get("end")
+        if expected and (not start or not end):
+            raise SystemExit("Enabling the LED schedule requires --start and --end when no schedule is stored.")
+        command = ["tplinkctl", "led", "schedule", on_off(expected)]
+        if start:
+            command.extend(["--start", start])
+        if end:
+            command.extend(["--end", end])
+        command.append("--yes")
+        if args.plan:
+            rollback = ["tplinkctl", "led", "schedule", on_off(bool(schedule.get("enabled")))]
+            if schedule.get("start"):
+                rollback.extend(["--start", str(schedule["start"])])
+            if schedule.get("end"):
+                rollback.extend(["--end", str(schedule["end"])])
+            rollback.append("--yes")
+            return mutation_plan(
+                action="router.led.set",
+                command=command,
+                current=current,
+                changes=[
+                    f"turn LED night schedule {on_off(expected)}",
+                    f"set LED-off window to {start}-{end}",
+                ],
+                risk="physical_indicator_change",
+                rollback=rollback,
+            )
+        require_yes(args, f"turn LED schedule {on_off(expected)}")
+        api_request(
+            router,
+            operation_path(LED_SCHEDULE, "write"),
+            form_payload(
+                operation="write",
+                enable=on_off(expected),
+                time_start=start,
+                time_end=end,
+                ledpm_support="yes" if schedule.get("supported") else "no",
+            ),
+            ignore_response=True,
+        )
+        updated = led_status(router)
+        if updated["schedule"]["enabled"] is not expected:
+            raise SystemExit(f"Router did not confirm LED schedule {on_off(expected)}; current status is {updated}.")
+        return updated
+
+    emit(args, with_session(args, action))
+
+
 def cmd_clients(args: argparse.Namespace) -> None:
     def action(router):
         status = to_plain(router.get_status())
@@ -1932,8 +2165,9 @@ def cmd_raw(args: argparse.Namespace) -> None:
 
 def cmd_read(args: argparse.Namespace) -> None:
     def action(router):
-        return router.request(
-            normalize_api_path(args.path),
+        return api_request(
+            router,
+            operation_path(normalize_api_path(args.path), "read"),
             "operation=read",
             ignore_errors=args.ignore_errors,
         )
@@ -2165,6 +2399,7 @@ def operation_id(args: argparse.Namespace) -> str:
         "health": "router.health",
         "ipv4": "internet.wan",
         "leases": "device.list",
+        "led": "router.led.status" if getattr(args, "led_action", "status") == "status" else "router.led.set",
         "reservations": "device.reservations",
         "routes": "discovery.routes",
         "snapshot": "router.snapshot",
@@ -2250,6 +2485,7 @@ def add_common(parser: argparse.ArgumentParser) -> None:
 def add_simple_commands(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     commands = {
         "firmware": (cmd_firmware, "show firmware and model info"),
+        "firmware-check": (cmd_firmware_check, "audit firmware update availability without installing anything"),
         "health": (cmd_health, "summarize router health and likely issues"),
         "status": (cmd_status, "show router, WAN, Wi-Fi, speed, and device status"),
         "snapshot": (cmd_snapshot, "collect a broad read-only router snapshot"),
@@ -2402,6 +2638,23 @@ def build_parser() -> argparse.ArgumentParser:
     wifi_info = subparsers.add_parser("wifi-info", help="list Wi-Fi SSIDs, bands, channels, and enabled state")
     wifi_info.add_argument("--group", choices=["main", "guest", "iot"], help="filter network group")
     wifi_info.set_defaults(func=cmd_wifi_info)
+
+    led = subparsers.add_parser("led", help="show or change router LED and night schedule settings")
+    led_subparsers = led.add_subparsers(dest="led_action", required=True)
+    led_status_parser = led_subparsers.add_parser("status", help="show LED and night schedule status")
+    led_status_parser.set_defaults(func=cmd_led)
+    for led_action in ("on", "off"):
+        led_toggle = led_subparsers.add_parser(led_action, help=f"turn router LEDs {led_action}")
+        led_toggle.add_argument("--plan", action="store_true", help="show the planned change without mutating router state")
+        led_toggle.add_argument("--yes", action="store_true", help="confirm LED change")
+        led_toggle.set_defaults(func=cmd_led)
+    led_schedule = led_subparsers.add_parser("schedule", help="configure the nightly LED-off window")
+    led_schedule.add_argument("enabled", type=bool_arg, help="on/off")
+    led_schedule.add_argument("--start", type=time_arg, help="start of LED-off window in HH:MM")
+    led_schedule.add_argument("--end", type=time_arg, help="end of LED-off window in HH:MM")
+    led_schedule.add_argument("--plan", action="store_true", help="show the planned change without mutating router state")
+    led_schedule.add_argument("--yes", action="store_true", help="confirm schedule change")
+    led_schedule.set_defaults(func=cmd_led)
 
     devices = subparsers.add_parser("devices", help="list connected devices with IP, speed, signal, and usage")
     add_device_filters(devices)

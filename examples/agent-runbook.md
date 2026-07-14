@@ -7,6 +7,7 @@ This runbook shows the safe operating loop for an AI agent managing a local TP-L
 ```bash
 tplinkctl --json capabilities
 tplinkctl --json tools
+tplinkctl --json --no-input firmware-check
 tplinkctl --json demo
 ```
 
@@ -17,6 +18,7 @@ Use `capabilities` for policy/risk metadata, `tools` for MCP-style wrappers, and
 ```bash
 tplinkctl --json --no-input doctor --deep
 tplinkctl --json --no-input status
+tplinkctl --json --no-input led status
 tplinkctl --json --no-input devices --active
 ```
 
@@ -34,6 +36,7 @@ Snapshots are local and redacted. They are useful for before/after comparisons.
 
 ```bash
 tplinkctl --json --reason "demo plan only" --no-input device block Pixel --plan --enforce
+tplinkctl --json --reason "night schedule plan" --no-input led schedule on --start 23:00 --end 07:00 --plan
 ```
 
 The agent should show the target hostname, IP, MAC, risk, and rollback before executing any mutation.
@@ -66,4 +69,4 @@ export TPLINK_MCP_PROFILE=device-admin
 tplinkctl-mcp
 ```
 
-Agents should call `device_plan` before `device_block` or `device_unblock`. Mutating MCP tools require `confirm=true`.
+Use `firmware_audit` for a read-only update check. Agents should call `device_plan` before device mutations and `led_plan` before `led_set`. Mutating MCP tools require `confirm=true`.

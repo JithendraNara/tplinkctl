@@ -37,6 +37,10 @@ class McpTests(unittest.TestCase):
         response = mcp.handle_request({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
         names = {tool["name"] for tool in response["result"]["tools"]}
         self.assertIn("router_status", names)
+        self.assertIn("firmware_audit", names)
+        self.assertIn("led_status", names)
+        self.assertIn("led_plan", names)
+        self.assertIn("led_set", names)
         self.assertIn("device_plan", names)
         self.assertIn("watch", names)
         self.assertIn("audit_tail", names)
@@ -47,6 +51,13 @@ class McpTests(unittest.TestCase):
         payload = json.loads(result["content"][0]["text"])
         self.assertFalse(result["isError"])
         self.assertEqual(payload["hostname"], "debian_linux")
+
+    def test_firmware_audit_tool_is_read_only(self):
+        result = call_tool_with_fake_router("firmware_audit")
+        payload = json.loads(result["content"][0]["text"])
+        self.assertFalse(result["isError"])
+        self.assertTrue(payload["update"]["available"])
+        self.assertFalse(payload["action_taken"])
 
     def test_device_plan_tool_does_not_mutate(self):
         result = call_tool_with_fake_router("device_plan", {"action": "block", "query": "debian", "enforce": True})
@@ -62,6 +73,27 @@ class McpTests(unittest.TestCase):
                 "id": 3,
                 "method": "tools/call",
                 "params": {"name": "device_block", "arguments": {"query": "debian"}},
+            }
+        )
+        self.assertTrue(response["result"]["isError"])
+        self.assertIn("confirm=true", response["result"]["content"][0]["text"])
+
+    def test_led_tools_plan_and_require_confirmation(self):
+        status = call_tool_with_fake_router("led_status")
+        self.assertTrue(json.loads(status["content"][0]["text"])["enabled"])
+
+        plan = call_tool_with_fake_router(
+            "led_plan",
+            {"action": "schedule", "enabled": True, "start": "22:00", "end": "06:00"},
+        )
+        self.assertTrue(json.loads(plan["content"][0]["text"])["plan"])
+
+        response = mcp.handle_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 5,
+                "method": "tools/call",
+                "params": {"name": "led_set", "arguments": {"action": "off"}},
             }
         )
         self.assertTrue(response["result"]["isError"])

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Guarded LED status, on/off, and nightly schedule commands with planning, confirmation, rollback guidance, live verification, and MCP tools.
+- Read-only firmware update audit with normalized availability, auto-update status, and MCP access.
+
+### Fixed
+
+- Place `operation=read` in both the URL and encrypted payload for BE-series endpoints that require it.
+- Report the live BE3500 VPN client-status failure truthfully in capability and doctor output.
+
 ## v0.1.0 - 2026-05-05
 
 Initial public release.

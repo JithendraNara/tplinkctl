@@ -2,7 +2,7 @@
 
 Tiny, scriptable CLI for a local TP-Link router admin page such as `http://192.168.0.1/webpages/index.html#/internetAdv`.
 
-This wrapper uses [`tplinkrouterc6u`](https://pypi.org/project/tplinkrouterc6u/), which currently lists Archer BE220 v1.0 support and handles TP-Link's login encryption/session flow.
+This wrapper uses [`tplinkrouterc6u`](https://pypi.org/project/tplinkrouterc6u/) for TP-Link's login encryption/session flow. The current live target identifies as Archer BE3500 v1.0; its unauthenticated UI bundle retains a `BE220v1` build identifier.
 
 ## Why
 
@@ -38,6 +38,9 @@ tplinkctl --json state save --name before-change
 tplinkctl --json doctor --deep
 tplinkctl --json health
 tplinkctl --json status
+tplinkctl --json led status
+tplinkctl --json led off --plan
+tplinkctl --json led schedule on --start 23:00 --end 07:00 --plan
 tplinkctl devices --active
 tplinkctl device Pixel
 tplinkctl device reserve Pixel --yes
@@ -47,6 +50,7 @@ tplinkctl wifi-info
 tplinkctl speedtest --skip-upload
 tplinkctl --json wan
 tplinkctl --json firmware
+tplinkctl --json firmware-check
 ```
 
 Prefer `TPLINK_PASSWORD` or the interactive password prompt over `--password`, so the password is not left in shell history.
@@ -55,6 +59,11 @@ Prefer `TPLINK_PASSWORD` or the interactive password prompt over `--password`, s
 
 ```bash
 tplinkctl firmware
+tplinkctl firmware-check
+tplinkctl led status
+tplinkctl led on --yes
+tplinkctl led off --yes
+tplinkctl led schedule on --start 23:00 --end 07:00 --yes
 tplinkctl capabilities
 tplinkctl tools
 tplinkctl demo
@@ -216,7 +225,7 @@ export TPLINK_MCP_PROFILE=device-admin
 tplinkctl-mcp
 ```
 
-Available tool methods include `router_status`, `device_list`, `device_show`, `device_plan`, `device_block`, `device_unblock`, `doctor_deep`, `watch`, `audit_tail`, `state_snapshot`, and `state_diff`. Mutating MCP tools require `confirm=true` in addition to the CLI's router-side safeguards.
+Available tool methods include `router_status`, `firmware_audit`, `led_status`, `led_plan`, `led_set`, `device_list`, `device_show`, `device_plan`, `device_block`, `device_unblock`, `doctor_deep`, `watch`, `audit_tail`, `state_snapshot`, and `state_diff`. Mutating MCP tools require `confirm=true` in addition to the CLI's router-side safeguards.
 
 The server speaks the core JSON-RPC methods used by MCP clients:
 

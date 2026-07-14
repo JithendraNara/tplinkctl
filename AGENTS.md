@@ -28,9 +28,11 @@ Do not echo `TPLINK_PASSWORD` in logs, reports, prompts, or shell snippets.
 4. Start `tplinkctl-mcp` when the agent framework supports stdio JSON-RPC tools.
 5. Run `tplinkctl --json --no-input doctor --deep` to verify web UI reachability, authentication, and read-only endpoint health.
 6. Run `tplinkctl --json --no-input status` for a human-sized router summary.
-7. Run `tplinkctl --json --no-input devices --active` before making device decisions.
-8. Use `tplinkctl --json --no-input device <query>` to resolve an exact hostname, IP, or MAC before mutating.
-9. Save state before meaningful changes: `tplinkctl --json --no-input state save --name before-change`.
+7. Run `tplinkctl --json --no-input firmware-check` to audit update availability without installing firmware.
+8. Run `tplinkctl --json --no-input led status` before planning an LED change.
+9. Run `tplinkctl --json --no-input devices --active` before making device decisions.
+10. Use `tplinkctl --json --no-input device <query>` to resolve an exact hostname, IP, or MAC before mutating.
+11. Save state before meaningful changes: `tplinkctl --json --no-input state save --name before-change`.
 
 ## Guardrails
 
@@ -83,6 +85,7 @@ tplinkctl --json state diff --before before-change --after after-change
 High confidence:
 
 - `router.status`: summary, WAN, Wi-Fi, devices, health
+- `router.firmware.audit`: current firmware, update availability, and auto-update configuration; never installs firmware
 - `device.list`: connected device inventory with IP, MAC, speed, usage, connection type
 - `device.show`: exact device lookup
 - `device.reserve`: live verified DHCP reservation
@@ -90,6 +93,7 @@ High confidence:
 - `device.block`: live verified access-control blacklist insert
 - `device.unblock`: live verified blacklist removal
 - `wifi.info`: SSIDs, bands, channel state, redacted secrets
+- `router.led.status`: LED state and nightly LED-off schedule
 - `internet.speed`: current router-reported device throughput
 - `internet.speedtest`: external Cloudflare speed test
 - `agent.tools`: local tool schemas for agent wrappers
@@ -100,6 +104,7 @@ High confidence:
 Known risky or experimental:
 
 - `router.reboot`: requires `--yes`, interrupts the network.
+- `router.led.set`: requires `--yes`; use `--plan` first and verify after changing state or schedule.
 - `wifi.toggle`: can disconnect agents if they are on that network.
 - `advanced.raw`: escape hatch for endpoint experiments.
 - `device.vpn`: currently marked `firmware_error` on the tested BE3500 firmware.
@@ -129,6 +134,10 @@ TPLINK_MCP_PROFILE=device-admin tplinkctl-mcp
 MCP tools:
 
 - `router_status`
+- `firmware_audit`
+- `led_status`
+- `led_plan`
+- `led_set`
 - `device_list`
 - `device_show`
 - `device_plan`

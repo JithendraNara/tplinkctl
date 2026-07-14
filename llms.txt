@@ -12,6 +12,9 @@
 - State snapshot: `tplinkctl --json --no-input state save --name baseline`
 - State diff: `tplinkctl --json state diff`
 - Read-only router probe: `tplinkctl --json --no-input doctor --deep`
+- Firmware update audit: `tplinkctl --json --no-input firmware-check`
+- LED status: `tplinkctl --json --no-input led status`
+- Safe LED plan: `tplinkctl --json --no-input led schedule on --start 23:00 --end 07:00 --plan`
 - Broad state snapshot: `tplinkctl --json --no-input snapshot`
 - Current status: `tplinkctl --json --no-input status`
 - Connected devices: `tplinkctl --json --no-input devices --active`
@@ -46,7 +49,8 @@
 - Live verified target: Archer BE3500, firmware `1.1.3 Build 20251120 rel.38341(5553)`.
 - `device reserve`, `device release`, `device block`, and `device unblock` are live verified.
 - `device vpn` is currently marked `firmware_error` because the tested router returns a Lua dispatcher error for `admin/vpn?form=vpn_user_list`.
-- Some SG/BE endpoints require `operation` in both the URL and encrypted payload; the CLI handles this for known device actions.
+- `vpn-client-status` is currently marked `firmware_error` because the tested router returns an unreadable response.
+- Some SG/BE endpoints require `operation` in both the URL and encrypted payload; generic reads and known mutations handle this placement.
 
 ## Project Files
 

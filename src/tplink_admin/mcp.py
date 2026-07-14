@@ -63,6 +63,40 @@ def argv_status(_: dict[str, Any]) -> list[str]:
     return base_argv() + ["status"]
 
 
+def argv_firmware_audit(_: dict[str, Any]) -> list[str]:
+    return base_argv() + ["firmware-check"]
+
+
+def argv_led_status(_: dict[str, Any]) -> list[str]:
+    return base_argv() + ["led", "status"]
+
+
+def led_change_argv(arguments: dict[str, Any], *, plan: bool) -> list[str]:
+    action = string_arg(arguments, "action")
+    if action not in {"on", "off", "schedule"}:
+        raise ValueError("action must be one of: on, off, schedule")
+    argv = base_argv() + ["led", action]
+    if action == "schedule":
+        if "enabled" not in arguments:
+            raise ValueError("enabled is required for a schedule change")
+        argv.append("on" if bool_arg(arguments, "enabled") else "off")
+        if start := arguments.get("start"):
+            argv.extend(["--start", str(start)])
+        if end := arguments.get("end"):
+            argv.extend(["--end", str(end)])
+    argv.append("--plan" if plan else "--yes")
+    return argv
+
+
+def argv_led_plan(arguments: dict[str, Any]) -> list[str]:
+    return led_change_argv(arguments, plan=True)
+
+
+def argv_led_set(arguments: dict[str, Any]) -> list[str]:
+    require_confirmation(arguments, "led_set")
+    return led_change_argv(arguments, plan=False)
+
+
 def argv_devices(arguments: dict[str, Any]) -> list[str]:
     argv = base_argv() + ["devices"]
     if bool_arg(arguments, "active", False):
@@ -151,6 +185,10 @@ def argv_state_diff(arguments: dict[str, Any]) -> list[str]:
 
 TOOL_BUILDERS: dict[str, Callable[[dict[str, Any]], list[str]]] = {
     "router_status": argv_status,
+    "firmware_audit": argv_firmware_audit,
+    "led_status": argv_led_status,
+    "led_plan": argv_led_plan,
+    "led_set": argv_led_set,
     "device_list": argv_devices,
     "device_show": argv_device_show,
     "device_plan": argv_device_plan,
@@ -172,7 +210,7 @@ def tool_definitions() -> list[dict[str, Any]]:
             "description": item["description"],
             "inputSchema": item["input_schema"],
         }
-        if item["name"] in {"device_block", "device_unblock"}:
+        if item["name"] in {"device_block", "device_unblock", "led_set"}:
             tool["inputSchema"] = dict(tool["inputSchema"])
             properties = dict(tool["inputSchema"].get("properties", {}))
             properties["confirm"] = {"type": "boolean", "description": "Must be true to execute the mutation."}
