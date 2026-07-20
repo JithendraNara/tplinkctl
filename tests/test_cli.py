@@ -573,6 +573,58 @@ class CliTests(unittest.TestCase):
         paths = {c["path"] for c in changes}
         self.assertEqual(paths, {"wifi.channel"})
 
+    def test_state_diff_only_matches_list_index_paths(self):
+        # Regression: --only devices must match devices[0].hostname, not just
+        # devices.* (which silently drops list-element diffs).
+        before = {"devices": [{"hostname": "a"}], "wifi": {"enabled": True}}
+        after = {"devices": [{"hostname": "b"}], "wifi": {"enabled": False}}
+        changes = cli.diff_values(before, after, only_prefix="devices")
+        self.assertEqual(len(changes), 1)
+        self.assertEqual(changes[0]["path"], "devices[0].hostname")
+
+    def test_state_diff_ignore_prefix_suppresses_whole_list(self):
+        before = {"devices": [{"hostname": "a"}]}
+        after = {"devices": [{"hostname": "b"}]}
+        changes = cli.diff_values(before, after, ignore_prefixes=("devices",))
+        self.assertEqual(changes, [])
+
+    def test_state_diff_list_length_change_shows_added_element(self):
+        before = {"devices": [{"hostname": "a"}]}
+        after = {"devices": [{"hostname": "a"}, {"hostname": "b"}]}
+        changes = cli.diff_values(before, after)
+        added = [c for c in changes if c["type"] == "added"]
+        self.assertEqual(len(added), 1)
+        self.assertEqual(added[0]["path"], "devices[1]")
+        self.assertEqual(added[0]["after"], {"hostname": "b"})
+
+    def test_state_diff_noise_leaf_added_still_surfaces(self):
+        # A dict-add for a normally-ignored leaf (e.g. signal_dbm appearing on
+        # a device that didn't have one) must still be reported. Otherwise
+        # intentional additions inside noisy fields are silently hidden.
+        before = {"devices": [{"hostname": "x"}]}
+        after = {"devices": [{"hostname": "x", "signal_dbm": -30}]}
+        changes = cli.diff_values(before, after)
+        self.assertEqual(len(changes), 1)
+        self.assertEqual(changes[0]["path"], "devices[0].signal_dbm")
+        self.assertEqual(changes[0]["type"], "added")
+
+    def test_state_diff_noise_leaf_removed_still_surfaces(self):
+        before = {"devices": [{"hostname": "x", "signal_dbm": -30}]}
+        after = {"devices": [{"hostname": "x"}]}
+        changes = cli.diff_values(before, after)
+        self.assertEqual(len(changes), 1)
+        self.assertEqual(changes[0]["path"], "devices[0].signal_dbm")
+        self.assertEqual(changes[0]["type"], "removed")
+
+    def test_state_diff_noise_leaf_value_change_still_filtered(self):
+        # When both sides have the noise leaf and it just changes value, the
+        # default filter still drops it. Intentional changes use --raw or
+        # remove the leaf from the ignore set.
+        before = {"devices": [{"hostname": "x", "signal_dbm": -50}]}
+        after = {"devices": [{"hostname": "x", "signal_dbm": -30}]}
+        changes = cli.diff_values(before, after)
+        self.assertEqual(changes, [])
+
     def test_state_diff_cli_default_suppresses_noise(self):
         with tempfile.TemporaryDirectory() as tmp:
             run_cli_in_config(tmp, ["--json", "--no-input", "state", "save", "--name", "a"])

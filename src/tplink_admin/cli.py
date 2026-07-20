@@ -568,18 +568,20 @@ DEFAULT_DIFF_IGNORE_LEAVES: frozenset[str] = frozenset(
 )
 
 
-def _diff_leaf_matches(path: str, leaf: str) -> bool:
-    """True if `path` ends with `.leaf` or equals `leaf`."""
-    if path == leaf:
-        return True
-    return path.endswith("." + leaf)
-
-
 def _path_matches(path: str, prefix: str) -> bool:
-    """True if `path` is `prefix` or starts with `prefix.`."""
+    """True if `path` is `prefix` or starts with `prefix.`, `prefix[`, etc.
+
+    Handles both dot-separated paths (``wifi.enabled``) and list-index
+    paths (``devices[0]``), so prefixes like ``devices`` correctly match
+    every element inside the array.
+    """
     if path == prefix:
         return True
-    return path.startswith(prefix + ".")
+    if path.startswith(prefix + "."):
+        return True
+    if path.startswith(prefix + "["):
+        return True
+    return False
 
 
 def diff_values(
@@ -593,33 +595,28 @@ def diff_values(
 ) -> list[dict[str, Any]]:
     """Recursively diff two JSON-like structures.
 
-    `ignore_leaves`: trailing path segments to skip (e.g. ``"online_seconds"``).
-    `ignore_prefixes`: dotted path prefixes to skip (e.g. ``"signal_dbm"`` won't
-    match since it's a leaf; but ``"devices[0]"`` would skip that device's
-    subtree).
+    `ignore_leaves`: trailing path segments to skip when the leaf is the
+    only thing that changed under its parent (e.g. ``"online_seconds"``).
+    Skipped leaves are still surfaced for dict-add / dict-remove events
+    and for non-leaf diffs, so an intentional mutation to a "noisy"
+    field is never silently dropped.
+    `ignore_prefixes`: dotted path prefixes to skip (e.g. ``"devices[0]"``
+    skips one device's subtree).
     `only_prefix`: if set, restrict the diff to paths starting with this prefix.
     """
     changes: list[dict[str, Any]] = []
 
-    def _emit(path: str, change: dict[str, Any]) -> None:
-        if only_prefix and not _path_matches(path, only_prefix):
-            return
-        leaf = path.rsplit(".", 1)[-1]
-        if leaf in ignore_leaves:
-            return
-        if any(_path_matches(path, p) for p in ignore_prefixes):
-            return
-        changes.append(change)
-
     def _is_pruned(path: str) -> bool:
         if only_prefix is not None and not _path_matches(path, only_prefix):
-            return True
-        leaf = path.rsplit(".", 1)[-1]
-        if leaf in ignore_leaves:
             return True
         if any(_path_matches(path, p) for p in ignore_prefixes):
             return True
         return False
+
+    def _emit(path: str, change: dict[str, Any]) -> None:
+        if _is_pruned(path):
+            return
+        changes.append(change)
 
     if isinstance(before, dict) and isinstance(after, dict):
         for key in sorted(set(before) | set(after)):
@@ -629,6 +626,16 @@ def diff_values(
             elif key not in after:
                 _emit(path, {"path": path, "type": "removed", "before": before[key]})
             else:
+                # Only skip noise-leaf diffs when the leaf is the *whole* child
+                # and that child matches on every other key. That way adding or
+                # removing a noise leaf under an otherwise-unchanged parent
+                # still surfaces, and nested noise is filtered.
+                if (
+                    not isinstance(before[key], (dict, list))
+                    and not isinstance(after[key], (dict, list))
+                    and path.rsplit(".", 1)[-1] in ignore_leaves
+                ):
+                    continue
                 changes.extend(
                     diff_values(
                         before[key],
@@ -642,7 +649,8 @@ def diff_values(
         return changes
     if isinstance(before, list) and isinstance(after, list):
         if before != after:
-            # Diff per-pair so ignore filters apply to list contents.
+            # Diff per-pair so ignore filters apply to list contents and the
+            # caller can see exactly which element was added or removed.
             child_changes: list[dict[str, Any]] = []
             max_len = max(len(before), len(after))
             for i in range(max_len):
@@ -664,20 +672,7 @@ def diff_values(
                             only_prefix=only_prefix,
                         )
                     )
-            if child_changes:
-                # If every change is purely a list-length delta, summarize.
-                if all(c["type"] in ("added", "removed") for c in child_changes):
-                    _emit(
-                        prefix,
-                        {
-                            "path": prefix,
-                            "type": "changed",
-                            "before_count": len(before),
-                            "after_count": len(after),
-                        },
-                    )
-                else:
-                    changes.extend(child_changes)
+            changes.extend(child_changes)
         return changes
     if before != after:
         _emit(prefix, {"path": prefix, "type": "changed", "before": before, "after": after})
