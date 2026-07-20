@@ -540,24 +540,147 @@ def load_state_snapshot(name: str | None = None) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def diff_values(before: Any, after: Any, prefix: str = "") -> list[dict[str, Any]]:
+#: Field name suffixes / leaves that change every snapshot regardless of mutation.
+#: These are rates, counters, and timestamps — useful for monitoring, useless for
+#: verifying a mutation. Matched against the trailing path segment after any dots.
+DEFAULT_DIFF_IGNORE_LEAVES: frozenset[str] = frozenset(
+    {
+        "generated_at",
+        "online_seconds",
+        "packets_received",
+        "packets_sent",
+        "rx_rate",
+        "tx_rate",
+        "down_Bps",
+        "up_Bps",
+        "down_human",
+        "up_human",
+        "down",
+        "up",
+        "usage_bytes",
+        "cpu_usage",
+        "mem_usage",
+        "signal_dbm",
+        "wan_uptime_seconds",
+        "snapshot_path",
+        "snapshot_name",
+    }
+)
+
+
+def _diff_leaf_matches(path: str, leaf: str) -> bool:
+    """True if `path` ends with `.leaf` or equals `leaf`."""
+    if path == leaf:
+        return True
+    return path.endswith("." + leaf)
+
+
+def _path_matches(path: str, prefix: str) -> bool:
+    """True if `path` is `prefix` or starts with `prefix.`."""
+    if path == prefix:
+        return True
+    return path.startswith(prefix + ".")
+
+
+def diff_values(
+    before: Any,
+    after: Any,
+    prefix: str = "",
+    *,
+    ignore_leaves: frozenset[str] = DEFAULT_DIFF_IGNORE_LEAVES,
+    ignore_prefixes: tuple[str, ...] = (),
+    only_prefix: str | None = None,
+) -> list[dict[str, Any]]:
+    """Recursively diff two JSON-like structures.
+
+    `ignore_leaves`: trailing path segments to skip (e.g. ``"online_seconds"``).
+    `ignore_prefixes`: dotted path prefixes to skip (e.g. ``"signal_dbm"`` won't
+    match since it's a leaf; but ``"devices[0]"`` would skip that device's
+    subtree).
+    `only_prefix`: if set, restrict the diff to paths starting with this prefix.
+    """
     changes: list[dict[str, Any]] = []
+
+    def _emit(path: str, change: dict[str, Any]) -> None:
+        if only_prefix and not _path_matches(path, only_prefix):
+            return
+        leaf = path.rsplit(".", 1)[-1]
+        if leaf in ignore_leaves:
+            return
+        if any(_path_matches(path, p) for p in ignore_prefixes):
+            return
+        changes.append(change)
+
+    def _is_pruned(path: str) -> bool:
+        if only_prefix is not None and not _path_matches(path, only_prefix):
+            return True
+        leaf = path.rsplit(".", 1)[-1]
+        if leaf in ignore_leaves:
+            return True
+        if any(_path_matches(path, p) for p in ignore_prefixes):
+            return True
+        return False
+
     if isinstance(before, dict) and isinstance(after, dict):
         for key in sorted(set(before) | set(after)):
             path = f"{prefix}.{key}" if prefix else str(key)
             if key not in before:
-                changes.append({"path": path, "type": "added", "after": after[key]})
+                _emit(path, {"path": path, "type": "added", "after": after[key]})
             elif key not in after:
-                changes.append({"path": path, "type": "removed", "before": before[key]})
+                _emit(path, {"path": path, "type": "removed", "before": before[key]})
             else:
-                changes.extend(diff_values(before[key], after[key], path))
+                changes.extend(
+                    diff_values(
+                        before[key],
+                        after[key],
+                        path,
+                        ignore_leaves=ignore_leaves,
+                        ignore_prefixes=ignore_prefixes,
+                        only_prefix=only_prefix,
+                    )
+                )
         return changes
     if isinstance(before, list) and isinstance(after, list):
         if before != after:
-            changes.append({"path": prefix, "type": "changed", "before_count": len(before), "after_count": len(after)})
+            # Diff per-pair so ignore filters apply to list contents.
+            child_changes: list[dict[str, Any]] = []
+            max_len = max(len(before), len(after))
+            for i in range(max_len):
+                child_path = f"{prefix}[{i}]"
+                if i >= len(before):
+                    if not _is_pruned(child_path):
+                        child_changes.append({"path": child_path, "type": "added", "after": after[i]})
+                elif i >= len(after):
+                    if not _is_pruned(child_path):
+                        child_changes.append({"path": child_path, "type": "removed", "before": before[i]})
+                else:
+                    child_changes.extend(
+                        diff_values(
+                            before[i],
+                            after[i],
+                            child_path,
+                            ignore_leaves=ignore_leaves,
+                            ignore_prefixes=ignore_prefixes,
+                            only_prefix=only_prefix,
+                        )
+                    )
+            if child_changes:
+                # If every change is purely a list-length delta, summarize.
+                if all(c["type"] in ("added", "removed") for c in child_changes):
+                    _emit(
+                        prefix,
+                        {
+                            "path": prefix,
+                            "type": "changed",
+                            "before_count": len(before),
+                            "after_count": len(after),
+                        },
+                    )
+                else:
+                    changes.extend(child_changes)
         return changes
     if before != after:
-        changes.append({"path": prefix, "type": "changed", "before": before, "after": after})
+        _emit(prefix, {"path": prefix, "type": "changed", "before": before, "after": after})
     return changes
 
 
@@ -2259,8 +2382,28 @@ def cmd_state_diff(args: argparse.Namespace) -> None:
     else:
         before = load_state_snapshot(before_name)
         after = load_state_snapshot(after_name)
-    changes = diff_values(before, after)
-    emit(args, {"before": before_name, "after": after_name, "change_count": len(changes), "changes": changes[: args.limit]})
+    ignore_leaves = frozenset() if args.raw else DEFAULT_DIFF_IGNORE_LEAVES
+    extra_ignores = tuple(args.ignore or ())
+    changes = diff_values(
+        before,
+        after,
+        ignore_leaves=ignore_leaves,
+        ignore_prefixes=extra_ignores,
+        only_prefix=args.only,
+    )
+    emit(
+        args,
+        {
+            "before": before_name,
+            "after": after_name,
+            "change_count": len(changes),
+            "changes": changes[: args.limit],
+            "raw": bool(args.raw),
+            "ignored_leaves": sorted(ignore_leaves) if not args.raw else [],
+            "ignored_prefixes": list(extra_ignores),
+            "only_prefix": args.only,
+        },
+    )
 
 
 def web_doctor_payload(args: argparse.Namespace) -> dict[str, Any]:
@@ -2624,6 +2767,22 @@ def build_parser() -> argparse.ArgumentParser:
     state_diff.add_argument("--before", help="older snapshot name; defaults to previous")
     state_diff.add_argument("--after", help="newer snapshot name; defaults to latest")
     state_diff.add_argument("--limit", type=int, default=100, help="maximum changes to print")
+    state_diff.add_argument(
+        "--raw",
+        action="store_true",
+        help="disable default filtering of rate/counter/timestamp fields; show every change",
+    )
+    state_diff.add_argument(
+        "--ignore",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="additional dotted path prefix to skip (repeatable); e.g. --ignore signal_dbm --ignore devices[3]",
+    )
+    state_diff.add_argument(
+        "--only",
+        help="restrict the diff to paths starting with this dotted prefix; e.g. wifi",
+    )
     state_diff.set_defaults(func=cmd_state_diff)
 
     doctor = subparsers.add_parser("doctor", help="check router web UI reachability and optional authenticated probes")

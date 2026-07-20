@@ -80,6 +80,11 @@ tplinkctl --json --no-input state save --name after-change
 tplinkctl --json state diff --before before-change --after after-change
 ```
 
+The default `state diff` filters rate/counter/timestamp noise so a no-op diff
+returns zero changes and a real mutation surfaces cleanly. Use `--raw` to see
+every field, `--only <prefix>` to scope to a subtree, or `--ignore <path>`
+(repeatable) to add additional dotted paths to skip.
+
 ## Agent-Oriented Capabilities
 
 High confidence:

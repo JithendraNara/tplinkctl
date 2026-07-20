@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## v0.3.0 - 2026-07-20
+
+### Added
+
+- `state diff` now filters rate/counter/timestamp noise by default so a no-op diff returns zero changes and a real mutation surfaces cleanly.
+- `state diff --raw` to disable the default filter and see every field.
+- `state diff --only <prefix>` to scope the diff to a subtree (e.g. `wifi`).
+- `state diff --ignore <path>` (repeatable) to add additional dotted paths to skip.
+
+### Changed
+
+- `state diff` output now includes `ignored_leaves`, `ignored_prefixes`, `only_prefix`, and `raw` for self-describing results.
+
 ## v0.2.0 - 2026-07-20
 
 ### Added
