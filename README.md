@@ -180,6 +180,12 @@ tplinkctl --json state show --list
 tplinkctl --json state diff --before before --after after
 ```
 
+By default `state diff` filters rate/counter/timestamp noise (e.g. `online_seconds`,
+`packets_received`, `cpu_usage`, `signal_dbm`) so a no-op diff returns zero
+changes and a real mutation surfaces cleanly. Pass `--raw` to see every field,
+`--only <prefix>` to scope to a subtree (e.g. `--only wifi`), or
+`--ignore <path>` to add additional dotted paths to skip.
+
 `tools` prints a local tool schema that agent frameworks can map to shell commands:
 
 ```bash

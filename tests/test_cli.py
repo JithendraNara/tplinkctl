@@ -482,13 +482,161 @@ class CliTests(unittest.TestCase):
             saved_one = json.loads(run_cli_in_config(tmp, ["--json", "--no-input", "state", "save", "--name", "one"]))
             saved_two = json.loads(run_cli_in_config(tmp, ["--json", "--no-input", "state", "save", "--name", "two"]))
             shown = json.loads(run_cli_in_config(tmp, ["--json", "state", "show", "one"]))
-            diff = json.loads(run_cli_in_config(tmp, ["--json", "state", "diff", "--before", "one", "--after", "two"]))
+            # Default diff filters rate/counter/timestamp noise, so two identical
+            # saves should report zero changes. Verify with --raw that they still
+            # differ (proves snapshots aren't being deduped).
+            filtered = json.loads(run_cli_in_config(tmp, ["--json", "state", "diff", "--before", "one", "--after", "two"]))
+            raw = json.loads(run_cli_in_config(tmp, ["--json", "state", "diff", "--before", "one", "--after", "two", "--raw"]))
         self.assertTrue(saved_one["saved"].endswith("one.json"))
         self.assertTrue(saved_two["saved"].endswith("two.json"))
         self.assertEqual(shown["snapshot_name"], "one")
-        self.assertEqual(diff["before"], "one")
-        self.assertEqual(diff["after"], "two")
-        self.assertGreaterEqual(diff["change_count"], 1)
+        self.assertEqual(filtered["before"], "one")
+        self.assertEqual(filtered["after"], "two")
+        # Default should be clean (noise filtered) while raw still shows some change.
+        self.assertEqual(filtered["change_count"], 0)
+        self.assertGreaterEqual(raw["change_count"], 1)
+
+    def test_state_diff_filters_transient_fields_by_default(self):
+        before = {
+            "generated_at": "2026-07-20T13:55:18.996751+00:00",
+            "health": {"summary": {"cpu_usage": 0.14, "mem_usage": 0.48, "wan_uptime_seconds": 385189}},
+            "devices": [
+                {"hostname": "Pixel", "online_seconds": 100, "packets_received": 1000, "down_Bps": 50},
+            ],
+            "wifi": {"enabled": True},
+        }
+        after = {
+            "generated_at": "2026-07-20T13:56:00.000000+00:00",
+            "health": {"summary": {"cpu_usage": 0.28, "mem_usage": 0.51, "wan_uptime_seconds": 385249}},
+            "devices": [
+                {"hostname": "Pixel", "online_seconds": 142, "packets_received": 1500, "down_Bps": 90},
+            ],
+            "wifi": {"enabled": True},
+        }
+        changes = cli.diff_values(before, after)
+        # Only structural noise changes; wifi.enabled didn't change, so zero real diffs.
+        self.assertEqual(changes, [])
+
+    def test_state_diff_raw_keeps_every_change(self):
+        before = {"generated_at": "a", "value": 1}
+        after = {"generated_at": "b", "value": 2}
+        changes = cli.diff_values(before, after, ignore_leaves=frozenset())
+        paths = {c["path"] for c in changes}
+        self.assertIn("generated_at", paths)
+        self.assertIn("value", paths)
+
+    def test_state_diff_only_prefix_restricts_scope(self):
+        before = {"wifi": {"enabled": True, "channel": 10}, "health": {"ok": True}}
+        after = {"wifi": {"enabled": False, "channel": 10}, "health": {"ok": False}}
+        changes = cli.diff_values(before, after, only_prefix="wifi")
+        paths = {c["path"] for c in changes}
+        self.assertIn("wifi.enabled", paths)
+        self.assertNotIn("health.ok", paths)
+
+    def test_state_diff_extra_ignore_prefixes(self):
+        before = {
+            "devices": [
+                {"hostname": "a", "active": True},
+                {"hostname": "b", "active": False},
+            ],
+        }
+        after = {
+            "devices": [
+                {"hostname": "a-renamed", "active": True},
+                {"hostname": "b", "active": True},
+            ],
+        }
+        # Default ignore set doesn't include hostname/active; expect both to show up.
+        all_changes = cli.diff_values(before, after)
+        paths = sorted({c["path"] for c in all_changes})
+        self.assertEqual(paths, ["devices[0].hostname", "devices[1].active"])
+        # With extra ignore on first device, only the second's `active` flips remain.
+        filtered = cli.diff_values(before, after, ignore_prefixes=("devices[0]",))
+        self.assertEqual(len(filtered), 1)
+        self.assertIn("devices[1].active", filtered[0]["path"])
+
+    def test_state_diff_default_returns_empty_on_identical_snapshots(self):
+        snap = {
+            "generated_at": "2026-07-20T13:55:18+00:00",
+            "health": {"summary": {"cpu_usage": 0.5, "mem_usage": 0.5}},
+            "devices": [
+                {"hostname": "Pixel", "online_seconds": 100, "down_Bps": 50},
+            ],
+        }
+        changes = cli.diff_values(snap, snap)
+        self.assertEqual(changes, [])
+
+    def test_state_diff_structural_change_surfaces(self):
+        before = {"wifi": {"enabled": True, "channel": 10, "ssid": "ps"}}
+        after = {"wifi": {"enabled": True, "channel": 36, "ssid": "ps"}}
+        changes = cli.diff_values(before, after)
+        paths = {c["path"] for c in changes}
+        self.assertEqual(paths, {"wifi.channel"})
+
+    def test_state_diff_only_matches_list_index_paths(self):
+        # Regression: --only devices must match devices[0].hostname, not just
+        # devices.* (which silently drops list-element diffs).
+        before = {"devices": [{"hostname": "a"}], "wifi": {"enabled": True}}
+        after = {"devices": [{"hostname": "b"}], "wifi": {"enabled": False}}
+        changes = cli.diff_values(before, after, only_prefix="devices")
+        self.assertEqual(len(changes), 1)
+        self.assertEqual(changes[0]["path"], "devices[0].hostname")
+
+    def test_state_diff_ignore_prefix_suppresses_whole_list(self):
+        before = {"devices": [{"hostname": "a"}]}
+        after = {"devices": [{"hostname": "b"}]}
+        changes = cli.diff_values(before, after, ignore_prefixes=("devices",))
+        self.assertEqual(changes, [])
+
+    def test_state_diff_list_length_change_shows_added_element(self):
+        before = {"devices": [{"hostname": "a"}]}
+        after = {"devices": [{"hostname": "a"}, {"hostname": "b"}]}
+        changes = cli.diff_values(before, after)
+        added = [c for c in changes if c["type"] == "added"]
+        self.assertEqual(len(added), 1)
+        self.assertEqual(added[0]["path"], "devices[1]")
+        self.assertEqual(added[0]["after"], {"hostname": "b"})
+
+    def test_state_diff_noise_leaf_added_still_surfaces(self):
+        # A dict-add for a normally-ignored leaf (e.g. signal_dbm appearing on
+        # a device that didn't have one) must still be reported. Otherwise
+        # intentional additions inside noisy fields are silently hidden.
+        before = {"devices": [{"hostname": "x"}]}
+        after = {"devices": [{"hostname": "x", "signal_dbm": -30}]}
+        changes = cli.diff_values(before, after)
+        self.assertEqual(len(changes), 1)
+        self.assertEqual(changes[0]["path"], "devices[0].signal_dbm")
+        self.assertEqual(changes[0]["type"], "added")
+
+    def test_state_diff_noise_leaf_removed_still_surfaces(self):
+        before = {"devices": [{"hostname": "x", "signal_dbm": -30}]}
+        after = {"devices": [{"hostname": "x"}]}
+        changes = cli.diff_values(before, after)
+        self.assertEqual(len(changes), 1)
+        self.assertEqual(changes[0]["path"], "devices[0].signal_dbm")
+        self.assertEqual(changes[0]["type"], "removed")
+
+    def test_state_diff_noise_leaf_value_change_still_filtered(self):
+        # When both sides have the noise leaf and it just changes value, the
+        # default filter still drops it. Intentional changes use --raw or
+        # remove the leaf from the ignore set.
+        before = {"devices": [{"hostname": "x", "signal_dbm": -50}]}
+        after = {"devices": [{"hostname": "x", "signal_dbm": -30}]}
+        changes = cli.diff_values(before, after)
+        self.assertEqual(changes, [])
+
+    def test_state_diff_cli_default_suppresses_noise(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_cli_in_config(tmp, ["--json", "--no-input", "state", "save", "--name", "a"])
+            run_cli_in_config(tmp, ["--json", "--no-input", "state", "save", "--name", "b"])
+            filtered = json.loads(run_cli_in_config(tmp, ["--json", "state", "diff", "--before", "a", "--after", "b"]))
+            raw = json.loads(run_cli_in_config(tmp, ["--json", "state", "diff", "--before", "a", "--after", "b", "--raw"]))
+        # Raw diff has rate/timestamp noise; default diff should drop to zero (or near-zero)
+        # because the fake router returns identical data between snapshots.
+        self.assertGreaterEqual(raw["change_count"], filtered["change_count"])
+        # Default explicitly reports what it ignored.
+        self.assertGreater(len(filtered["ignored_leaves"]), 0)
+        self.assertFalse(filtered["raw"])
 
     def test_deep_doctor_runs_read_only_probes(self):
         out = io.StringIO()
