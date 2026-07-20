@@ -5,7 +5,7 @@ This repo is intentionally small and tool-shaped.
 ## Development
 
 ```bash
-/Users/jithendranara/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 -m venv .venv
+python3 -m venv .venv
 .venv/bin/python -m pip install .
 make test
 make smoke

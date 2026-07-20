@@ -1,5 +1,8 @@
 # tplinkctl
 
+[![CI](https://github.com/JithendraNara/tplinkctl/actions/workflows/ci.yml/badge.svg)](https://github.com/JithendraNara/tplinkctl/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/tplink-admin-cli.svg)](https://pypi.org/project/tplink-admin-cli/)
+
 Tiny, scriptable CLI for a local TP-Link router admin page such as `http://192.168.0.1/webpages/index.html#/internetAdv`.
 
 This wrapper uses [`tplinkrouterc6u`](https://pypi.org/project/tplinkrouterc6u/) for TP-Link's login encryption/session flow. The current live target identifies as Archer BE3500 v1.0; its unauthenticated UI bundle retains a `BE220v1` build identifier.
@@ -18,7 +21,13 @@ Router admin pages are slow, stateful, and annoying to automate. `tplinkctl` tur
 Use Python 3.10+.
 
 ```bash
-/Users/jithendranara/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 -m venv .venv
+pip install tplink-admin-cli
+```
+
+Or from source:
+
+```bash
+python3 -m venv .venv
 .venv/bin/python -m pip install .
 ```
 

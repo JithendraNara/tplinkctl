@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Changed
+
+- Migrate CI from Travis to GitHub Actions (test matrix on Python 3.10–3.12).
+- Publish to PyPI automatically on GitHub Release via trusted publishing (OIDC).
+
+## v0.2.0 - 2026-07-20
+
 ### Added
 
 - Guarded LED status, on/off, and nightly schedule commands with planning, confirmation, rollback guidance, live verification, and MCP tools.
