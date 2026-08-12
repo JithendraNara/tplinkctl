@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Fixed
+
+- `state diff` now ignores the derived `usage` sibling of `usage_bytes`.
+- Device lists with unique `mac` values are matched by identity, so a reorder is not reported as field mutations.
+- `--ignore signal_dbm` is treated as a leaf name and actually filters nested paths such as `devices[0].signal_dbm`.
+- `--only wifi.enabled` now walks into an added or removed `wifi` parent instead of returning an empty diff.
+- MCP `state_diff` exposes `raw`, `only`, and `ignore`.
+
 ## v0.3.0 - 2026-07-20
 
 ### Added
