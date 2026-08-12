@@ -180,6 +180,15 @@ def argv_state_diff(arguments: dict[str, Any]) -> list[str]:
         argv.extend(["--after", str(after)])
     if limit := arguments.get("limit"):
         argv.extend(["--limit", str(positive_int(arguments, "limit", int(limit)))])
+    if bool_arg(arguments, "raw", False):
+        argv.append("--raw")
+    if only := arguments.get("only"):
+        argv.extend(["--only", str(only)])
+    ignore = arguments.get("ignore") or []
+    if isinstance(ignore, str):
+        ignore = [ignore]
+    for item in ignore:
+        argv.extend(["--ignore", str(item)])
     return argv
 
 

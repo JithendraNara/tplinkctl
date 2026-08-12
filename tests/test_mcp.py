@@ -155,6 +155,15 @@ class McpTests(unittest.TestCase):
         self.assertEqual(diff_payload["before"], "first")
         self.assertEqual(diff_payload["after"], "second")
 
+    def test_state_diff_argv_exposes_raw_only_ignore(self):
+        argv = mcp.argv_state_diff(
+            {"before": "a", "after": "b", "raw": True, "only": "wifi", "ignore": ["signal_dbm", "devices[0]"]}
+        )
+        self.assertIn("--raw", argv)
+        self.assertEqual(argv[argv.index("--only") + 1], "wifi")
+        self.assertIn("signal_dbm", argv)
+        self.assertIn("devices[0]", argv)
+
 
 if __name__ == "__main__":
     unittest.main()

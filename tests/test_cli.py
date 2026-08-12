@@ -657,6 +657,75 @@ class CliTests(unittest.TestCase):
         changes = cli.diff_values(before, after)
         self.assertEqual(changes, [])
 
+    def test_state_diff_filters_derived_usage_sibling(self):
+        before = {"devices": [{"hostname": "mac", "usage_bytes": 2048, "usage": "2.0 KB"}]}
+        after = {"devices": [{"hostname": "mac", "usage_bytes": 4096, "usage": "4.0 KB"}]}
+        self.assertEqual(cli.diff_values(before, after), [])
+
+    def test_state_diff_matches_devices_by_mac_on_reorder(self):
+        before = {
+            "devices": [
+                {"mac": "aa", "hostname": "A"},
+                {"mac": "bb", "hostname": "B"},
+                {"mac": "cc", "hostname": "C"},
+            ]
+        }
+        after = {
+            "devices": [
+                {"mac": "cc", "hostname": "C"},
+                {"mac": "aa", "hostname": "A"},
+                {"mac": "bb", "hostname": "B"},
+            ]
+        }
+        self.assertEqual(cli.diff_values(before, after), [])
+
+    def test_state_diff_mac_drop_attributes_the_removed_device(self):
+        before = {
+            "devices": [
+                {"mac": "aa", "hostname": "A"},
+                {"mac": "bb", "hostname": "B"},
+                {"mac": "cc", "hostname": "C"},
+            ]
+        }
+        after = {
+            "devices": [
+                {"mac": "bb", "hostname": "B"},
+                {"mac": "cc", "hostname": "C"},
+            ]
+        }
+        changes = cli.diff_values(before, after)
+        self.assertEqual(len(changes), 1)
+        self.assertEqual(changes[0]["type"], "removed")
+        self.assertEqual(changes[0]["before"]["hostname"], "A")
+
+    def test_state_diff_bare_ignore_leaf_filters_nested_path(self):
+        before = {"devices": [{"hostname": "x", "foo": 1}]}
+        after = {"devices": [{"hostname": "x", "foo": 2}]}
+        leaves, prefixes = cli.split_ignore_args(["foo"])
+        self.assertEqual(prefixes, ())
+        changes = cli.diff_values(before, after, ignore_leaves=leaves, ignore_prefixes=prefixes)
+        self.assertEqual(changes, [])
+
+    def test_state_diff_only_walks_into_added_parent(self):
+        before = {}
+        after = {"wifi": {"enabled": True, "channel": 36}}
+        changes = cli.diff_values(before, after, only_prefix="wifi.enabled")
+        self.assertEqual(len(changes), 1)
+        self.assertEqual(changes[0]["path"], "wifi.enabled")
+        self.assertEqual(changes[0]["type"], "added")
+
+    def test_state_diff_cli_ignore_leaf_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp) / "tplink-admin" / "state"
+            state.mkdir(parents=True)
+            (state / "a.json").write_text(json.dumps({"devices": [{"hostname": "x", "foo": 1}]}), encoding="utf-8")
+            (state / "b.json").write_text(json.dumps({"devices": [{"hostname": "x", "foo": 2}]}), encoding="utf-8")
+            data = json.loads(
+                run_cli_in_config(tmp, ["--json", "state", "diff", "--before", "a", "--after", "b", "--ignore", "foo"])
+            )
+        self.assertEqual(data["change_count"], 0)
+        self.assertIn("foo", data["ignored_leaves"])
+
     def test_state_diff_cli_default_suppresses_noise(self):
         with tempfile.TemporaryDirectory() as tmp:
             run_cli_in_config(tmp, ["--json", "--no-input", "state", "save", "--name", "a"])

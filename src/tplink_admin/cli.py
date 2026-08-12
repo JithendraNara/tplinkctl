@@ -561,6 +561,7 @@ DEFAULT_DIFF_IGNORE_LEAVES: frozenset[str] = frozenset(
         "down",
         "up",
         "usage_bytes",
+        "usage",
         "cpu_usage",
         "mem_usage",
         "signal_dbm",
@@ -569,6 +570,8 @@ DEFAULT_DIFF_IGNORE_LEAVES: frozenset[str] = frozenset(
         "snapshot_name",
     }
 )
+
+LIST_IDENTITY_KEYS: tuple[str, ...] = ("mac",)
 
 
 def _path_matches(path: str, prefix: str) -> bool:
@@ -585,6 +588,63 @@ def _path_matches(path: str, prefix: str) -> bool:
     if path.startswith(prefix + "["):
         return True
     return False
+
+
+def _is_leaf_ignore(value: str) -> bool:
+    return bool(value) and "." not in value and "[" not in value
+
+
+def split_ignore_args(values: list[str] | tuple[str, ...] | None) -> tuple[frozenset[str], tuple[str, ...]]:
+    """Split `--ignore` args into bare leaf names vs root-relative prefixes."""
+    leaves: set[str] = set()
+    prefixes: list[str] = []
+    for item in values or ():
+        if _is_leaf_ignore(item):
+            leaves.add(item)
+        elif item:
+            prefixes.append(item)
+    return frozenset(leaves), tuple(prefixes)
+
+
+def _empty_like(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {}
+    if isinstance(value, list):
+        return []
+    return None
+
+
+def _dict_identity(item: Any, key: str) -> str | None:
+    if not isinstance(item, dict):
+        return None
+    value = item.get(key)
+    if value in (None, ""):
+        return None
+    return str(value)
+
+
+def _unique_list_identities(items: list[Any], key: str) -> list[str] | None:
+    identities: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        ident = _dict_identity(item, key)
+        if ident is None or ident in seen:
+            return None
+        seen.add(ident)
+        identities.append(ident)
+    return identities
+
+
+def _list_identity_key(before: list[Any], after: list[Any]) -> str | None:
+    for key in LIST_IDENTITY_KEYS:
+        usable = True
+        for items in (before, after):
+            if items and _unique_list_identities(items, key) is None:
+                usable = False
+                break
+        if usable:
+            return key
+    return None
 
 
 def diff_values(
@@ -606,6 +666,8 @@ def diff_values(
     `ignore_prefixes`: dotted path prefixes to skip (e.g. ``"devices[0]"``
     skips one device's subtree).
     `only_prefix`: if set, restrict the diff to paths starting with this prefix.
+    Lists of dicts that all carry a unique ``mac`` are matched by that
+    identity so a reorder is not reported as field mutations.
     """
     changes: list[dict[str, Any]] = []
 
@@ -621,13 +683,38 @@ def diff_values(
             return
         changes.append(change)
 
+    def _recurse(left: Any, right: Any, path: str) -> None:
+        changes.extend(
+            diff_values(
+                left,
+                right,
+                path,
+                ignore_leaves=ignore_leaves,
+                ignore_prefixes=ignore_prefixes,
+                only_prefix=only_prefix,
+            )
+        )
+
+    def _walk_only_into(existing: Any, incoming: Any, path: str) -> bool:
+        if (
+            only_prefix is None
+            or not _path_matches(only_prefix, path)
+            or _path_matches(path, only_prefix)
+            or not isinstance(incoming, (dict, list))
+        ):
+            return False
+        _recurse(existing, incoming, path)
+        return True
+
     if isinstance(before, dict) and isinstance(after, dict):
         for key in sorted(set(before) | set(after)):
             path = f"{prefix}.{key}" if prefix else str(key)
             if key not in before:
-                _emit(path, {"path": path, "type": "added", "after": after[key]})
+                if not _walk_only_into(_empty_like(after[key]), after[key], path):
+                    _emit(path, {"path": path, "type": "added", "after": after[key]})
             elif key not in after:
-                _emit(path, {"path": path, "type": "removed", "before": before[key]})
+                if not _walk_only_into(before[key], _empty_like(before[key]), path):
+                    _emit(path, {"path": path, "type": "removed", "before": before[key]})
             else:
                 # Only skip noise-leaf diffs when the leaf is the *whole* child
                 # and that child matches on every other key. That way adding or
@@ -639,42 +726,60 @@ def diff_values(
                     and path.rsplit(".", 1)[-1] in ignore_leaves
                 ):
                     continue
-                changes.extend(
-                    diff_values(
-                        before[key],
-                        after[key],
-                        path,
-                        ignore_leaves=ignore_leaves,
-                        ignore_prefixes=ignore_prefixes,
-                        only_prefix=only_prefix,
-                    )
-                )
+                _recurse(before[key], after[key], path)
         return changes
     if isinstance(before, list) and isinstance(after, list):
         if before != after:
-            # Diff per-pair so ignore filters apply to list contents and the
-            # caller can see exactly which element was added or removed.
             child_changes: list[dict[str, Any]] = []
-            max_len = max(len(before), len(after))
-            for i in range(max_len):
-                child_path = f"{prefix}[{i}]"
-                if i >= len(before):
-                    if not _is_pruned(child_path):
-                        child_changes.append({"path": child_path, "type": "added", "after": after[i]})
-                elif i >= len(after):
-                    if not _is_pruned(child_path):
-                        child_changes.append({"path": child_path, "type": "removed", "before": before[i]})
-                else:
-                    child_changes.extend(
-                        diff_values(
-                            before[i],
-                            after[i],
-                            child_path,
-                            ignore_leaves=ignore_leaves,
-                            ignore_prefixes=ignore_prefixes,
-                            only_prefix=only_prefix,
+            identity_key = _list_identity_key(before, after)
+            if identity_key:
+                before_map = {_dict_identity(item, identity_key): (index, item) for index, item in enumerate(before)}
+                after_map = {_dict_identity(item, identity_key): (index, item) for index, item in enumerate(after)}
+                for ident in sorted(set(before_map) | set(after_map), key=str):
+                    if ident not in before_map:
+                        index, item = after_map[ident]
+                        child_path = f"{prefix}[{index}]"
+                        if not _is_pruned(child_path):
+                            child_changes.append({"path": child_path, "type": "added", "after": item})
+                    elif ident not in after_map:
+                        index, item = before_map[ident]
+                        child_path = f"{prefix}[{index}]"
+                        if not _is_pruned(child_path):
+                            child_changes.append({"path": child_path, "type": "removed", "before": item})
+                    else:
+                        _before_index, before_item = before_map[ident]
+                        after_index, after_item = after_map[ident]
+                        child_changes.extend(
+                            diff_values(
+                                before_item,
+                                after_item,
+                                f"{prefix}[{after_index}]",
+                                ignore_leaves=ignore_leaves,
+                                ignore_prefixes=ignore_prefixes,
+                                only_prefix=only_prefix,
+                            )
                         )
-                    )
+            else:
+                max_len = max(len(before), len(after))
+                for i in range(max_len):
+                    child_path = f"{prefix}[{i}]"
+                    if i >= len(before):
+                        if not _is_pruned(child_path):
+                            child_changes.append({"path": child_path, "type": "added", "after": after[i]})
+                    elif i >= len(after):
+                        if not _is_pruned(child_path):
+                            child_changes.append({"path": child_path, "type": "removed", "before": before[i]})
+                    else:
+                        child_changes.extend(
+                            diff_values(
+                                before[i],
+                                after[i],
+                                child_path,
+                                ignore_leaves=ignore_leaves,
+                                ignore_prefixes=ignore_prefixes,
+                                only_prefix=only_prefix,
+                            )
+                        )
             changes.extend(child_changes)
         return changes
     if before != after:
@@ -1342,6 +1447,9 @@ def tool_manifest() -> dict[str, Any]:
                     "before": {"type": "string"},
                     "after": {"type": "string"},
                     "limit": {"type": "integer", "minimum": 1},
+                    "raw": {"type": "boolean"},
+                    "only": {"type": "string"},
+                    "ignore": {"type": "array", "items": {"type": "string"}},
                 },
                 "additionalProperties": False,
             },
@@ -2516,12 +2624,13 @@ def cmd_state_diff(args: argparse.Namespace) -> None:
         before = load_state_snapshot(before_name)
         after = load_state_snapshot(after_name)
     ignore_leaves = frozenset() if args.raw else DEFAULT_DIFF_IGNORE_LEAVES
-    extra_ignores = tuple(args.ignore or ())
+    extra_leaves, extra_prefixes = split_ignore_args(args.ignore)
+    ignore_leaves = ignore_leaves | extra_leaves
     changes = diff_values(
         before,
         after,
         ignore_leaves=ignore_leaves,
-        ignore_prefixes=extra_ignores,
+        ignore_prefixes=extra_prefixes,
         only_prefix=args.only,
     )
     emit(
@@ -2532,8 +2641,8 @@ def cmd_state_diff(args: argparse.Namespace) -> None:
             "change_count": len(changes),
             "changes": changes[: args.limit],
             "raw": bool(args.raw),
-            "ignored_leaves": sorted(ignore_leaves) if not args.raw else [],
-            "ignored_prefixes": list(extra_ignores),
+            "ignored_leaves": sorted(ignore_leaves),
+            "ignored_prefixes": list(extra_prefixes),
             "only_prefix": args.only,
         },
     )
@@ -2911,7 +3020,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         metavar="PATH",
-        help="additional dotted path prefix to skip (repeatable); e.g. --ignore signal_dbm --ignore devices[3]",
+        help="additional leaf name or dotted path prefix to skip (repeatable); e.g. --ignore signal_dbm --ignore devices[3]",
     )
     state_diff.add_argument(
         "--only",
