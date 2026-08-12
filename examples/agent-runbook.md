@@ -37,6 +37,7 @@ Snapshots are local and redacted. They are useful for before/after comparisons.
 ```bash
 tplinkctl --json --reason "demo plan only" --no-input device block Pixel --plan --enforce
 tplinkctl --json --reason "night schedule plan" --no-input led schedule on --start 23:00 --end 07:00 --plan
+tplinkctl --json --reason "5GHz latency optimization plan" --no-input wifi-config host_5g --channel 149 --width 80 --plan
 ```
 
 The agent should show the target hostname, IP, MAC, risk, and rollback before executing any mutation.
@@ -46,6 +47,7 @@ The agent should show the target hostname, IP, MAC, risk, and rollback before ex
 ```bash
 tplinkctl --json --profile device-admin --reason "authorized pause" --no-input device block Pixel --yes --enforce
 tplinkctl --json --profile device-admin --reason "restore access" --no-input device unblock Pixel --yes
+tplinkctl --json --profile network-admin --reason "apply 5GHz channel optimization" --no-input wifi-config host_5g --channel 149 --width 80 --yes
 ```
 
 Use `--profile` or `TPLINK_PROFILE` to keep autonomous sessions bounded.

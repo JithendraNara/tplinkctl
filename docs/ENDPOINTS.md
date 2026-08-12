@@ -40,6 +40,8 @@ DNS values (`1.1.1.1`, `8.8.8.8`) are currently observed from router status/DHCP
 | `/admin/dhcps?form=reservation` | SG JSON request with `operation=load/insert/remove` | ✓ first-class reserve/release works |
 | `/admin/ledgeneral?form=setting` | SG JSON request with `operation=read/write` in URL and body | ✓ first-class LED status/on/off works |
 | `/admin/ledpm?form=setting` | SG JSON request with `operation=read/write` in URL and body | ✓ first-class night schedule works |
+| `/admin/wireless?form=wireless_5g` | SG JSON request with `operation=read/write` in URL and body | ✓ first-class `wifi-config host_5g` works |
+| `/admin/wireless?form=wireless_2g` | SG JSON request with `operation=read/write` in URL and body | ✓ first-class `wifi-config host_2g` works |
 | `/admin/cloud_account?form=cloud_upgrade` | SG JSON request with `operation=read` in URL and body | ✓ `firmware-check` update availability |
 | `/admin/firmware?form=auto_upgrade` | SG JSON request with `operation=read` in URL and body | ✓ `firmware-check` auto-update status |
 | `/admin/lan?form=setting` | any | ✗ encrypted response (different cipher) |

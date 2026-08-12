@@ -92,13 +92,15 @@ Tools:
 - `device_plan`
 - `device_block`
 - `device_unblock`
+- `wifi_config_plan`
+- `wifi_config`
 - `doctor_deep`
 - `watch`
 - `audit_tail`
 - `state_snapshot`
 - `state_diff`
 
-Mutating tools require `confirm=true`. Agents should call `device_plan` or `led_plan` first and show the rollback command before calling a mutation tool.
+Mutating tools require `confirm=true`. Agents should call `device_plan`, `led_plan`, or `wifi_config_plan` first and show the rollback command before calling a mutation tool.
 
 ## Config Examples
 

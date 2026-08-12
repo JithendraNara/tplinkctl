@@ -106,6 +106,8 @@ tplinkctl reservations
 tplinkctl clients --active
 tplinkctl wifi guest_2g on
 tplinkctl wifi guest_2g off
+tplinkctl wifi-config host_5g --channel 149 --width 80 --plan
+tplinkctl wifi-config host_5g --channel 149 --width 80 --yes
 tplinkctl vpn-status
 tplinkctl vpn-client-status
 tplinkctl reboot --yes
