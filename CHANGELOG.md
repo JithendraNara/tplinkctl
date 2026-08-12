@@ -1,12 +1,6 @@
 # Changelog
 
-## v0.4.0 - 2026-08-12
-
-### Added
-
-- `wifi-config` command (`wifi.config` operation) to configure Wi-Fi radio parameters (`--channel`, `--width`/`--htmode`, `--txpower`, `--ssid`) for network bands (`host_2g`, `host_5g`, etc.).
-- `--plan` preview support for `wifi-config` mutations.
-- `wifi_config_plan` and `wifi_config` stdio JSON-RPC MCP tools in `tplinkctl-mcp`.
+## v0.4.1 - 2026-08-12
 
 ### Fixed
 
@@ -17,20 +11,15 @@
 - `--only devices[0].hostname` now recurses into added/removed list items to project matching nested paths.
 - MCP `state_diff` exposes `raw`, `only`, and `ignore`.
 
-## v0.3.0 - 2026-07-20
+## v0.4.0 - 2026-08-12
 
 ### Added
 
-- `state diff` now filters rate/counter/timestamp noise by default so a no-op diff returns zero changes and a real mutation surfaces cleanly.
-- `state diff --raw` to disable the default filter and see every field.
-- `state diff --only <prefix>` to scope the diff to a subtree (e.g. `wifi`).
-- `state diff --ignore <path>` (repeatable) to add additional dotted paths to skip.
+- `wifi-config` command (`wifi.config` operation) to configure Wi-Fi radio parameters (`--channel`, `--width`/`--htmode`, `--txpower`, `--ssid`) for network bands (`host_2g`, `host_5g`, etc.).
+- `--plan` preview support for `wifi-config` mutations.
+- `wifi_config_plan` and `wifi_config` stdio JSON-RPC MCP tools in `tplinkctl-mcp`.
 
-### Changed
-
-- `state diff` output now includes `ignored_leaves`, `ignored_prefixes`, `only_prefix`, and `raw` for self-describing results.
-
-## v0.2.0 - 2026-07-20
+## v0.3.0 - 2026-07-20
 
 ### Added
 
