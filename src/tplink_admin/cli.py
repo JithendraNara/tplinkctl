@@ -663,8 +663,8 @@ def diff_values(
     Skipped leaves are still surfaced for dict-add / dict-remove events
     and for non-leaf diffs, so an intentional mutation to a "noisy"
     field is never silently dropped.
-    `ignore_prefixes`: dotted path prefixes to skip (e.g. ``"devices[0]"``
-    skips one device's subtree).
+    `ignore_prefixes`: dotted path prefixes or leaf names to skip (e.g. ``"devices[0]"``
+    skips one device's subtree, ``"devices"`` skips the whole list, ``"foo"`` skips field foo).
     `only_prefix`: if set, restrict the diff to paths starting with this prefix.
     Lists of dicts that all carry a unique ``mac`` are matched by that
     identity so a reorder is not reported as field mutations.
@@ -674,7 +674,7 @@ def diff_values(
     def _is_pruned(path: str) -> bool:
         if only_prefix is not None and not _path_matches(path, only_prefix):
             return True
-        if any(_path_matches(path, p) for p in ignore_prefixes):
+        if any(_path_matches(path, p) or path.rsplit(".", 1)[-1] == p for p in ignore_prefixes):
             return True
         return False
 
@@ -739,13 +739,15 @@ def diff_values(
                     if ident not in before_map:
                         index, item = after_map[ident]
                         child_path = f"{prefix}[{index}]"
-                        if not _is_pruned(child_path):
-                            child_changes.append({"path": child_path, "type": "added", "after": item})
+                        if not _walk_only_into(_empty_like(item), item, child_path):
+                            if not _is_pruned(child_path):
+                                child_changes.append({"path": child_path, "type": "added", "after": item})
                     elif ident not in after_map:
                         index, item = before_map[ident]
                         child_path = f"{prefix}[{index}]"
-                        if not _is_pruned(child_path):
-                            child_changes.append({"path": child_path, "type": "removed", "before": item})
+                        if not _walk_only_into(item, _empty_like(item), child_path):
+                            if not _is_pruned(child_path):
+                                child_changes.append({"path": child_path, "type": "removed", "before": item})
                     else:
                         _before_index, before_item = before_map[ident]
                         after_index, after_item = after_map[ident]
@@ -764,11 +766,13 @@ def diff_values(
                 for i in range(max_len):
                     child_path = f"{prefix}[{i}]"
                     if i >= len(before):
-                        if not _is_pruned(child_path):
-                            child_changes.append({"path": child_path, "type": "added", "after": after[i]})
+                        if not _walk_only_into(_empty_like(after[i]), after[i], child_path):
+                            if not _is_pruned(child_path):
+                                child_changes.append({"path": child_path, "type": "added", "after": after[i]})
                     elif i >= len(after):
-                        if not _is_pruned(child_path):
-                            child_changes.append({"path": child_path, "type": "removed", "before": before[i]})
+                        if not _walk_only_into(before[i], _empty_like(before[i]), child_path):
+                            if not _is_pruned(child_path):
+                                child_changes.append({"path": child_path, "type": "removed", "before": before[i]})
                     else:
                         child_changes.extend(
                             diff_values(

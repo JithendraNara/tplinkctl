@@ -714,6 +714,26 @@ class CliTests(unittest.TestCase):
         self.assertEqual(changes[0]["path"], "wifi.enabled")
         self.assertEqual(changes[0]["type"], "added")
 
+    def test_state_diff_only_walks_into_added_list_item(self):
+        before = {"devices": []}
+        after = {"devices": [{"mac": "aa", "hostname": "A"}]}
+        changes = cli.diff_values(before, after, only_prefix="devices[0].hostname")
+        self.assertEqual(len(changes), 1)
+        self.assertEqual(changes[0]["path"], "devices[0].hostname")
+        self.assertEqual(changes[0]["type"], "added")
+
+    def test_state_diff_ignore_suppresses_added_or_removed_field(self):
+        before = {"a": 1}
+        after = {"a": 1, "foo": 2}
+        changes = cli.diff_values(before, after, ignore_prefixes=("foo",))
+        self.assertEqual(changes, [])
+
+    def test_state_diff_ignore_top_level_section(self):
+        before = {"devices": [{"hostname": "a"}]}
+        after = {"devices": [{"hostname": "b"}]}
+        changes = cli.diff_values(before, after, ignore_prefixes=("devices",))
+        self.assertEqual(changes, [])
+
     def test_state_diff_cli_ignore_leaf_name(self):
         with tempfile.TemporaryDirectory() as tmp:
             state = Path(tmp) / "tplink-admin" / "state"
