@@ -183,6 +183,25 @@ def argv_state_diff(arguments: dict[str, Any]) -> list[str]:
     return argv
 
 
+def argv_wifi_config(arguments: dict[str, Any], *, plan: bool) -> list[str]:
+    connection = string_arg(arguments, "connection")
+    argv = base_argv() + ["wifi-config", connection]
+    if channel := arguments.get("channel"):
+        argv.extend(["--channel", str(channel)])
+    if width := arguments.get("width"):
+        argv.extend(["--width", str(width)])
+    if txpower := arguments.get("txpower"):
+        argv.extend(["--txpower", str(txpower)])
+    if ssid := arguments.get("ssid"):
+        argv.extend(["--ssid", str(ssid)])
+    if plan or bool_arg(arguments, "plan", False):
+        argv.append("--plan")
+    else:
+        require_confirmation(arguments, "wifi_config")
+        argv.append("--yes")
+    return argv
+
+
 TOOL_BUILDERS: dict[str, Callable[[dict[str, Any]], list[str]]] = {
     "router_status": argv_status,
     "firmware_audit": argv_firmware_audit,
@@ -194,6 +213,8 @@ TOOL_BUILDERS: dict[str, Callable[[dict[str, Any]], list[str]]] = {
     "device_plan": argv_device_plan,
     "device_block": argv_device_block,
     "device_unblock": argv_device_unblock,
+    "wifi_config_plan": lambda args: argv_wifi_config(args, plan=True),
+    "wifi_config": lambda args: argv_wifi_config(args, plan=False),
     "doctor_deep": argv_doctor_deep,
     "watch": argv_watch,
     "audit_tail": argv_audit_tail,
@@ -210,7 +231,7 @@ def tool_definitions() -> list[dict[str, Any]]:
             "description": item["description"],
             "inputSchema": item["input_schema"],
         }
-        if item["name"] in {"device_block", "device_unblock", "led_set"}:
+        if item["name"] in {"device_block", "device_unblock", "led_set", "wifi_config"}:
             tool["inputSchema"] = dict(tool["inputSchema"])
             properties = dict(tool["inputSchema"].get("properties", {}))
             properties["confirm"] = {"type": "boolean", "description": "Must be true to execute the mutation."}

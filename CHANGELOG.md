@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## v0.4.0 - 2026-08-12
+
+### Added
+
+- `wifi-config` command (`wifi.config` operation) to configure Wi-Fi radio parameters (`--channel`, `--width`/`--htmode`, `--txpower`, `--ssid`) for network bands (`host_2g`, `host_5g`, etc.).
+- `--plan` preview support for `wifi-config` mutations.
+- `wifi_config_plan` and `wifi_config` stdio JSON-RPC MCP tools in `tplinkctl-mcp`.
 
 ## v0.3.0 - 2026-07-20
 

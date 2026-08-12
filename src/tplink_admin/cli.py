@@ -88,6 +88,7 @@ READ_COMMANDS = {
     "tools",
     "wan",
     "watch",
+    "wifi-config",
     "wifi-info",
     "wifi-status",
     "vpn-client-status",
@@ -129,6 +130,7 @@ MUTATION_OPERATIONS = {
     "device.unblock",
     "device.vpn",
     "wifi.toggle",
+    "wifi.config",
     "vpn.toggle",
     "vpn.client_toggle",
     "router.reboot",
@@ -146,11 +148,11 @@ POLICY_PROFILES = {
         "description": "Device inventory plus DHCP reservations and access-control changes. Blocks router-wide network changes.",
         "allow_commands": sorted(READ_COMMANDS | {"device"}),
         "allow_operations": sorted(READ_OPERATIONS | {"device.access.set", "device.reserve", "device.release", "device.block", "device.unblock"}),
-        "deny_operations": sorted({"device.vpn", "wifi.toggle", "vpn.toggle", "vpn.client_toggle", "router.reboot", "advanced.raw"}),
+        "deny_operations": sorted({"device.vpn", "wifi.toggle", "wifi.config", "vpn.toggle", "vpn.client_toggle", "router.reboot", "advanced.raw"}),
     },
     "network-admin": {
         "description": "Read operations, device administration, Wi-Fi/VPN toggles, and reboot. Blocks raw endpoint experiments.",
-        "allow_commands": sorted(READ_COMMANDS | {"device", "reboot", "vpn", "vpn-client", "wifi"}),
+        "allow_commands": sorted(READ_COMMANDS | {"device", "reboot", "vpn", "vpn-client", "wifi", "wifi-config"}),
         "allow_operations": sorted((READ_OPERATIONS | MUTATION_OPERATIONS) - {"advanced.raw"}),
         "deny_operations": ["advanced.raw"],
     },
@@ -227,6 +229,7 @@ CAPABILITIES = [
     {"id": "wifi.status", "command": "wifi-status", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
     {"id": "wifi.info", "command": "wifi-info", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
     {"id": "wifi.toggle", "command": "wifi <connection> <on|off>", "type": "mutation", "requires_auth": True, "requires_confirmation": False, "risk": "network_outage", "rollback": "Run the opposite wifi command.", "status": "supported"},
+    {"id": "wifi.config", "command": "wifi-config <connection> [--channel ...] [--width ...] [--txpower ...] [--ssid ...] --yes", "type": "mutation", "requires_auth": True, "requires_confirmation": "--yes", "risk": "wifi_radio_configuration", "rollback": "Run wifi-config with previous radio parameters.", "status": "supported"},
     {"id": "device.list", "command": "devices", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
     {"id": "device.show", "command": "device <query>", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
     {"id": "device.access", "command": "device access <status|on|off>", "type": "read_or_mutation", "requires_auth": True, "requires_confirmation": "--yes for on/off", "risk": "network_access_policy", "status": "supported"},
@@ -1263,6 +1266,44 @@ def tool_manifest() -> dict[str, Any]:
             "input_schema": {"type": "object", "required": ["query"], "properties": {"query": {"type": "string"}}, "additionalProperties": False},
         },
         {
+            "name": "wifi_config_plan",
+            "description": "Plan a Wi-Fi radio configuration change (channel, width, txpower, SSID) without changing router state.",
+            "command": ["tplinkctl", "--json", "--no-input", "wifi-config", "<connection>", "--plan"],
+            "read_only": True,
+            "input_schema": {
+                "type": "object",
+                "required": ["connection"],
+                "properties": {
+                    "connection": {"type": "string", "enum": [item.value for item in Connection if item is not Connection.UNKNOWN]},
+                    "channel": {"type": "string"},
+                    "width": {"type": "string"},
+                    "txpower": {"type": "string", "enum": ["low", "middle", "high"]},
+                    "ssid": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "wifi_config",
+            "description": "Configure Wi-Fi radio parameters (channel, channel width, txpower, SSID). Requires explicit confirmation.",
+            "command": ["tplinkctl", "--json", "--no-input", "wifi-config", "<connection>", "--yes"],
+            "read_only": False,
+            "risk": "wifi_radio_configuration",
+            "rollback": ["Re-run wifi-config with previous radio settings."],
+            "input_schema": {
+                "type": "object",
+                "required": ["connection"],
+                "properties": {
+                    "connection": {"type": "string", "enum": [item.value for item in Connection if item is not Connection.UNKNOWN]},
+                    "channel": {"type": "string"},
+                    "width": {"type": "string"},
+                    "txpower": {"type": "string", "enum": ["low", "middle", "high"]},
+                    "ssid": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
             "name": "doctor_deep",
             "description": "Run read-only web, auth, and endpoint health probes.",
             "command": ["tplinkctl", "--json", "--no-input", "doctor", "--deep"],
@@ -1566,6 +1607,19 @@ def connection_arg(value: str) -> Connection:
             return connection
     choices = ", ".join(item.value for item in Connection if item is not Connection.UNKNOWN)
     raise argparse.ArgumentTypeError(f"unknown connection `{value}`; choose one of: {choices}")
+
+
+CONNECTION_FORM_MAP: dict[Connection, str] = {
+    Connection.HOST_2G: "wireless_2g",
+    Connection.HOST_5G: "wireless_5g",
+    Connection.HOST_6G: "wireless_6g",
+    Connection.GUEST_2G: "guest_2g",
+    Connection.GUEST_5G: "guest_5g",
+    Connection.GUEST_6G: "guest_6g",
+    Connection.IOT_2G: "iot_2g",
+    Connection.IOT_5G: "iot_5g",
+    Connection.IOT_6G: "iot_6g",
+}
 
 
 def vpn_arg(value: str) -> VPN:
@@ -2235,6 +2289,90 @@ def cmd_wifi(args: argparse.Namespace) -> None:
     emit(args, with_session(args, action))
 
 
+def cmd_wifi_config(args: argparse.Namespace) -> None:
+    connection = args.connection
+    form_name = CONNECTION_FORM_MAP.get(connection)
+    if not form_name:
+        raise SystemExit(f"Connection `{connection.value}` does not support Wi-Fi radio configuration.")
+    path = f"admin/wireless?form={form_name}"
+
+    changes = []
+    if args.channel is not None:
+        changes.append(f"channel -> {args.channel}")
+    if args.width is not None:
+        changes.append(f"width (htmode) -> {args.width}")
+    if args.txpower is not None:
+        changes.append(f"txpower -> {args.txpower}")
+    if args.ssid is not None:
+        changes.append(f"ssid -> {args.ssid}")
+
+    if not changes:
+        raise SystemExit("No configuration parameters specified. Provide at least one of: --channel, --width, --txpower, --ssid.")
+
+    if args.plan:
+        def plan_action(router):
+            current = to_plain(api_request(router, operation_path(path, "read"), "operation=read"))
+            planned_changes = []
+            if args.channel is not None:
+                planned_changes.append(f"channel: {current.get('channel')} -> {args.channel}")
+            if args.width is not None:
+                planned_changes.append(f"width (htmode): {current.get('htmode')} -> {args.width}")
+            if args.txpower is not None:
+                planned_changes.append(f"txpower: {current.get('txpower')} -> {args.txpower}")
+            if args.ssid is not None:
+                planned_changes.append(f"ssid: {current.get('ssid')} -> {args.ssid}")
+            return mutation_plan(
+                action="wifi-config",
+                command=[
+                    "wifi-config",
+                    connection.value,
+                    *([f"--channel={args.channel}"] if args.channel is not None else []),
+                    *([f"--width={args.width}"] if args.width is not None else []),
+                    *([f"--txpower={args.txpower}"] if args.txpower is not None else []),
+                    *([f"--ssid={args.ssid}"] if args.ssid is not None else []),
+                ],
+                target={"connection": connection.value, "form": form_name},
+                current=current,
+                changes=planned_changes,
+                risk="wifi_radio_configuration",
+                rollback=["Re-run wifi-config with previous radio parameters."],
+            )
+
+        emit(args, with_session(args, plan_action))
+        return
+
+    require_yes(args, "configure Wi-Fi radio settings")
+
+    def action(router):
+        current = to_plain(api_request(router, operation_path(path, "read"), "operation=read"))
+        payload_dict = dict(current)
+        payload_dict["operation"] = "write"
+        if args.channel is not None:
+            payload_dict["channel"] = args.channel
+        if args.width is not None:
+            payload_dict["htmode"] = args.width
+        if args.txpower is not None:
+            payload_dict["txpower"] = args.txpower
+        if args.ssid is not None:
+            payload_dict["ssid"] = args.ssid
+
+        payload_str = form_payload(**{k: v for k, v in payload_dict.items() if isinstance(v, str)})
+        api_request(router, operation_path(path, "write"), payload_str)
+
+        verified = to_plain(api_request(router, operation_path(path, "read"), "operation=read"))
+        return {
+            "connection": connection.value,
+            "configured": True,
+            "channel": verified.get("channel"),
+            "current_channel": verified.get("current_channel"),
+            "width": verified.get("htmode"),
+            "txpower": verified.get("txpower"),
+            "ssid": verified.get("ssid"),
+        }
+
+    emit(args, with_session(args, action))
+
+
 def cmd_vpn_status(args: argparse.Namespace) -> None:
     emit(args, with_session(args, lambda router: router.get_vpn_status()))
 
@@ -2548,6 +2686,7 @@ def operation_id(args: argparse.Namespace) -> str:
         "wan": "internet.wan",
         "watch": "agent.watch",
         "wifi": "wifi.toggle",
+        "wifi-config": "wifi.config",
         "wifi-info": "wifi.info",
         "wifi-status": "wifi.status",
         "vpn": "vpn.toggle",
@@ -2788,6 +2927,16 @@ def build_parser() -> argparse.ArgumentParser:
     wifi.add_argument("connection", type=connection_arg, help="for example: host_2g, host_5g, host_6g, guest_2g, iot_2g")
     wifi.add_argument("enabled", type=bool_arg, help="on/off")
     wifi.set_defaults(func=cmd_wifi)
+
+    wifi_config = subparsers.add_parser("wifi-config", help="configure Wi-Fi channel, channel width, txpower, or SSID")
+    wifi_config.add_argument("connection", type=connection_arg, help="for example: host_2g, host_5g, guest_2g, iot_2g")
+    wifi_config.add_argument("--channel", help="channel number (e.g. 1, 6, 11, 36, 48, 149, auto)")
+    wifi_config.add_argument("--width", "--htmode", help="channel width / htmode (e.g. 20, 40, 80, 160, auto)")
+    wifi_config.add_argument("--txpower", choices=["low", "middle", "high"], help="transmit power level")
+    wifi_config.add_argument("--ssid", help="Wi-Fi network SSID")
+    wifi_config.add_argument("--plan", action="store_true", help="show the planned change without mutating router state")
+    wifi_config.add_argument("--yes", action="store_true", help="confirm Wi-Fi radio configuration change")
+    wifi_config.set_defaults(func=cmd_wifi_config)
 
     wifi_info = subparsers.add_parser("wifi-info", help="list Wi-Fi SSIDs, bands, channels, and enabled state")
     wifi_info.add_argument("--group", choices=["main", "guest", "iot"], help="filter network group")

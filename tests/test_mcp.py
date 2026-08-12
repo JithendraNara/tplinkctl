@@ -99,6 +99,28 @@ class McpTests(unittest.TestCase):
         self.assertTrue(response["result"]["isError"])
         self.assertIn("confirm=true", response["result"]["content"][0]["text"])
 
+    def test_wifi_config_tools_plan_and_require_confirmation(self):
+        plan = call_tool_with_fake_router(
+            "wifi_config_plan",
+            {"connection": "host_5g", "channel": "149", "width": "80"},
+        )
+        payload = json.loads(plan["content"][0]["text"])
+        self.assertTrue(payload["plan"])
+        self.assertEqual(payload["action"], "wifi-config")
+
+        response = mcp.handle_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 6,
+                "method": "tools/call",
+                "params": {"name": "wifi_config", "arguments": {"connection": "host_5g", "channel": "149"}},
+            }
+        )
+        self.assertIsNotNone(response)
+        assert response is not None
+        self.assertTrue(response["result"]["isError"])
+        self.assertIn("confirm=true", response["result"]["content"][0]["text"])
+
     def test_framed_stdio_round_trip(self):
         message = json.dumps({"jsonrpc": "2.0", "id": 4, "method": "tools/list"})
         raw = f"Content-Length: {len(message.encode('utf-8'))}\r\n\r\n{message}".encode()

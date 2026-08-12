@@ -211,8 +211,25 @@ class FakeRouter:
                 return None if kwargs.get("ignore_response") else {}
         if path == "admin/wireless?form=smart_connect":
             return {"smart_enable": "on"}
-        if "wireless_2g" in path:
+        if "wireless_2g" in path or "wireless_5g" in path:
+            if "operation=write" in data or "operation=write" in path:
+                from urllib.parse import parse_qs
+                payload = parse_qs(data)
+                if "channel" in payload:
+                    self.wifi_channel = payload["channel"][0]
+                if "htmode" in payload:
+                    self.wifi_htmode = payload["htmode"][0]
+                if "txpower" in payload:
+                    self.wifi_txpower = payload["txpower"][0]
+                if "ssid" in payload:
+                    self.wifi_ssid = payload["ssid"][0]
+                return None if kwargs.get("ignore_response") else {}
             return {
+                "channel": getattr(self, "wifi_channel", "auto"),
+                "current_channel": getattr(self, "wifi_channel", "48"),
+                "htmode": getattr(self, "wifi_htmode", "160"),
+                "txpower": getattr(self, "wifi_txpower", "high"),
+                "ssid": getattr(self, "wifi_ssid", "ps"),
                 "wireless_2g_enable": "on",
                 "wireless_2g_ssid": "lab",
                 "wireless_2g_current_channel": "3",
@@ -354,6 +371,21 @@ class CliTests(unittest.TestCase):
         self.assertTrue(data["smart_connect"])
         self.assertEqual(data["networks"][0]["ssid"], "lab")
         self.assertNotIn("psk_key", data["networks"][0])
+
+    def test_wifi_config_requires_confirmation_and_verifies(self):
+        with self.assertRaises(SystemExit) as raised:
+            run_cli(["--json", "--no-input", "wifi-config", "host_5g", "--channel", "149", "--width", "80"])
+        self.assertIn("--yes", str(raised.exception))
+        data = json.loads(run_cli(["--json", "--no-input", "wifi-config", "host_5g", "--channel", "149", "--width", "80", "--yes"]))
+        self.assertTrue(data["configured"])
+        self.assertEqual(data["channel"], "149")
+        self.assertEqual(data["width"], "80")
+
+    def test_wifi_config_plan_returns_preview_without_mutating(self):
+        plan = json.loads(run_cli(["--json", "--no-input", "wifi-config", "host_5g", "--channel", "149", "--width", "80", "--plan"]))
+        self.assertTrue(plan["plan"])
+        self.assertEqual(plan["action"], "wifi-config")
+        self.assertIn("channel: auto -> 149", plan["changes"])
 
     def test_led_status_reports_general_and_schedule(self):
         data = json.loads(run_cli(["--json", "--no-input", "led", "status"]))
