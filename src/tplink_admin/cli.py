@@ -76,8 +76,12 @@ READ_COMMANDS = {
     "firmware-check",
     "health",
     "ipv4",
+    "ipv6",
     "leases",
     "led",
+    "mesh",
+    "port-forward",
+    "ports",
     "read",
     "reservations",
     "routes",
@@ -91,6 +95,7 @@ READ_COMMANDS = {
     "wifi-config",
     "wifi-info",
     "wifi-status",
+    "wireguard",
     "vpn-client-status",
     "vpn-status",
 }
@@ -104,12 +109,17 @@ READ_OPERATIONS = {
     "router.status",
     "router.snapshot",
     "internet.wan",
+    "internet.ipv6",
     "internet.speed",
     "router.led.status",
+    "network.ports",
+    "nat.port_forward",
+    "mesh.topology",
     "wifi.status",
     "wifi.info",
     "vpn.status",
     "vpn.client_status",
+    "vpn.wireguard",
     "discovery.routes",
     "discovery.endpoints",
     "agent.capabilities",
@@ -190,6 +200,13 @@ LED_GENERAL = "admin/ledgeneral?form=setting"
 LED_SCHEDULE = "admin/ledpm?form=setting"
 FIRMWARE_LATEST = "admin/cloud_account?form=cloud_upgrade"
 FIRMWARE_AUTO_UPDATE = "admin/firmware?form=auto_upgrade"
+PORT_FORWARDING = "admin/nat?form=vs"
+PORT_SPEED_CURRENT = "admin/network?form=port_speed_current"
+PORT_SPEED_SUPPORTED = "admin/network?form=port_speed_supported"
+NETWORK_STATUS_IPV6 = "admin/network?form=status_ipv6"
+NETWORK_LAN_IPV6 = "admin/network?form=lan_ipv6"
+EASYMESH_DEVICE_LIST = "admin/easymesh_network?form=get_mesh_device_list_all"
+WIREGUARD_CONFIG = "admin/wireguard?form=config"
 KNOWN_QUIRKS = [
     {
         "id": "sg-operation-placement",
@@ -230,8 +247,12 @@ CAPABILITIES = [
     {"id": "router.led.status", "command": "led status", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "live_verified"},
     {"id": "router.led.set", "command": "led <on|off|schedule> --yes", "type": "mutation", "requires_auth": True, "requires_confirmation": "--yes", "risk": "physical_indicator_change", "rollback": "Run the inverse LED command or restore the previous schedule.", "status": "supported"},
     {"id": "internet.wan", "command": "wan", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
+    {"id": "internet.ipv6", "command": "ipv6", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "live_verified"},
     {"id": "internet.speed", "command": "speed", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
     {"id": "internet.speedtest", "command": "speedtest", "type": "external_network_test", "requires_auth": False, "output": ["json", "plain"], "status": "supported"},
+    {"id": "network.ports", "command": "ports", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "live_verified"},
+    {"id": "nat.port_forward", "command": "port-forward", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "live_verified"},
+    {"id": "mesh.topology", "command": "mesh", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "live_verified"},
     {"id": "wifi.status", "command": "wifi-status", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
     {"id": "wifi.info", "command": "wifi-info", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
     {"id": "wifi.toggle", "command": "wifi <connection> <on|off>", "type": "mutation", "requires_auth": True, "requires_confirmation": False, "risk": "network_outage", "rollback": "Run the opposite wifi command.", "status": "supported"},
@@ -245,6 +266,7 @@ CAPABILITIES = [
     {"id": "device.unblock", "command": "device unblock <query> --yes", "type": "mutation", "requires_auth": True, "requires_confirmation": "--yes", "risk": "device_access_policy", "rollback": "device block <query> --yes", "status": "live_verified"},
     {"id": "device.vpn", "command": "device vpn <query> <on|off> --yes", "type": "mutation", "requires_auth": True, "requires_confirmation": "--yes", "risk": "routing_change", "status": "firmware_error", "note": "Known to fail on the tested Archer BE3500 firmware."},
     {"id": "vpn.status", "command": "vpn-status", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
+    {"id": "vpn.wireguard", "command": "wireguard", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "live_verified"},
     {"id": "vpn.client_status", "command": "vpn-client-status", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "firmware_error", "note": "Known to fail on the tested Archer BE3500 firmware."},
     {"id": "vpn.client_toggle", "command": "vpn-client <on|off>", "type": "mutation", "requires_auth": True, "risk": "routing_change", "status": "supported"},
     {"id": "router.reboot", "command": "reboot --yes", "type": "mutation", "requires_auth": True, "requires_confirmation": "--yes", "risk": "router_reboot", "status": "supported"},
@@ -444,6 +466,8 @@ def human_rate(value: Any) -> str:
 
 
 def redact_value(key: str, value: Any) -> Any:
+    if key.lower() == "public_key":
+        return value
     if SENSITIVE_KEY_RE.search(key):
         if value in (None, ""):
             return value
@@ -1463,6 +1487,41 @@ def tool_manifest() -> dict[str, Any]:
                 },
                 "additionalProperties": False,
             },
+        },
+        {
+            "name": "port_forward_list",
+            "description": "List NAT virtual servers and port forwarding rules.",
+            "command": ["tplinkctl", "--json", "--no-input", "port-forward"],
+            "read_only": True,
+            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+        {
+            "name": "port_speed",
+            "description": "Show physical Ethernet port link speed negotiation and supported speeds.",
+            "command": ["tplinkctl", "--json", "--no-input", "ports"],
+            "read_only": True,
+            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+        {
+            "name": "ipv6_status",
+            "description": "Show WAN and LAN IPv6 configuration and status.",
+            "command": ["tplinkctl", "--json", "--no-input", "ipv6"],
+            "read_only": True,
+            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+        {
+            "name": "mesh_devices",
+            "description": "List EasyMesh network nodes, roles, and connected client counts.",
+            "command": ["tplinkctl", "--json", "--no-input", "mesh"],
+            "read_only": True,
+            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+        {
+            "name": "wireguard_status",
+            "description": "Show WireGuard VPN server configuration and status.",
+            "command": ["tplinkctl", "--json", "--no-input", "wireguard"],
+            "read_only": True,
+            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
         },
     ]
     return {
@@ -2515,6 +2574,93 @@ def cmd_vpn_client(args: argparse.Namespace) -> None:
     emit(args, with_session(args, action))
 
 
+def port_forwarding_rules(router) -> list[dict[str, Any]]:
+    data = to_plain(api_request(router, operation_path(PORT_FORWARDING, "read"), "operation=read"))
+    if isinstance(data, dict):
+        return [data]
+    if isinstance(data, list):
+        return data
+    return []
+
+
+def cmd_port_forward(args: argparse.Namespace) -> None:
+    emit(args, with_session(args, port_forwarding_rules))
+
+
+def port_speed_summary(router) -> dict[str, Any]:
+    cur = to_plain(api_request(router, operation_path(PORT_SPEED_CURRENT, "read"), "operation=read"))
+    sup = to_plain(api_request(router, operation_path(PORT_SPEED_SUPPORTED, "read"), "operation=read"))
+    return {
+        "speed": cur.get("speed") if isinstance(cur, dict) else None,
+        "supported": sup.get("supported") if isinstance(sup, dict) else [],
+    }
+
+
+def cmd_ports(args: argparse.Namespace) -> None:
+    emit(args, with_session(args, port_speed_summary))
+
+
+def ipv6_summary(router) -> dict[str, Any]:
+    st_v6 = to_plain(api_request(router, operation_path(NETWORK_STATUS_IPV6, "read"), "operation=read"))
+    lan_v6 = to_plain(api_request(router, operation_path(NETWORK_LAN_IPV6, "read"), "operation=read"))
+    st = st_v6 if isinstance(st_v6, dict) else {}
+    lan = lan_v6 if isinstance(lan_v6, dict) else {}
+    return {
+        "wan": {
+            "enabled": is_on(st.get("wan_ipv6_enable")),
+            "ipaddr": st.get("wan_ipv6_ip6addr"),
+            "gateway": st.get("wan_ipv6_gateway"),
+            "primary_dns": st.get("wan_ipv6_pridns"),
+            "secondary_dns": st.get("wan_ipv6_snddns"),
+            "connection_type": st.get("wan_ipv6_conntype"),
+        },
+        "lan": {
+            "address": lan.get("address") or st.get("lan_ipv6_ipaddr"),
+            "assign_type": lan.get("assign_type") or st.get("lan_ipv6_assign_type"),
+            "link_local_addr": st.get("lan_ipv6_link_local_addr"),
+            "dhcp_prefix": lan.get("dhcp_prefix"),
+            "slaac_prefix": lan.get("slaac_prefix"),
+        },
+    }
+
+
+def cmd_ipv6(args: argparse.Namespace) -> None:
+    emit(args, with_session(args, ipv6_summary))
+
+
+def mesh_nodes(router) -> list[dict[str, Any]]:
+    data = to_plain(api_request(router, operation_path(EASYMESH_DEVICE_LIST, "read"), "operation=read"))
+    if isinstance(data, dict):
+        return [data]
+    if isinstance(data, list):
+        return data
+    return []
+
+
+def cmd_mesh(args: argparse.Namespace) -> None:
+    emit(args, with_session(args, mesh_nodes))
+
+
+def wireguard_summary(router) -> dict[str, Any]:
+    wg_raw = to_plain(api_request(router, operation_path(WIREGUARD_CONFIG, "read"), "operation=read"))
+    if not isinstance(wg_raw, dict):
+        return {}
+    listen_port = wg_raw.get("listen_port")
+    keepalive = wg_raw.get("persistent_keepalive")
+    return {
+        "enabled": is_on(wg_raw.get("enable")),
+        "listen_port": int(listen_port) if listen_port and str(listen_port).isdigit() else listen_port,
+        "address": wg_raw.get("address"),
+        "public_key": wg_raw.get("public_key"),
+        "persistent_keepalive": int(keepalive) if keepalive and str(keepalive).isdigit() else keepalive,
+        "dns": is_on(wg_raw.get("dns")),
+    }
+
+
+def cmd_wireguard(args: argparse.Namespace) -> None:
+    emit(args, with_session(args, wireguard_summary))
+
+
 def cmd_reboot(args: argparse.Namespace) -> None:
     if not args.yes and not args.force:
         raise SystemExit("Refusing to reboot without --yes.")
@@ -2888,8 +3034,13 @@ def add_simple_commands(subparsers: argparse._SubParsersAction[argparse.Argument
         "wan": (cmd_wan, "show WAN summary"),
         "wifi-status": (cmd_wifi_status, "show Wi-Fi network enablement"),
         "ipv4": (cmd_ipv4, "show WAN/LAN IPv4 status"),
+        "ipv6": (cmd_ipv6, "show WAN/LAN IPv6 status"),
         "leases": (cmd_leases, "list DHCP leases"),
         "reservations": (cmd_reservations, "list IPv4 DHCP reservations"),
+        "port-forward": (cmd_port_forward, "list NAT virtual servers / port forwarding rules"),
+        "ports": (cmd_ports, "show physical Ethernet port link speed and capabilities"),
+        "mesh": (cmd_mesh, "list EasyMesh topology and mesh nodes"),
+        "wireguard": (cmd_wireguard, "show WireGuard VPN server configuration and status"),
         "vpn-status": (cmd_vpn_status, "show VPN server status"),
         "vpn-client-status": (cmd_vpn_client_status, "show VPN client status"),
     }

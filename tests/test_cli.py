@@ -239,6 +239,65 @@ class FakeRouter:
             return {"guest_2g_enable": "off", "guest_2g_ssid": "lab_guest"}
         if "iot_2g" in path:
             return {"iot_2g_enable": "on", "iot_2g_ssid": "lab_iot"}
+        if base_path == cli.PORT_FORWARDING:
+            return [
+                {
+                    "name": "NPM-HTTPS",
+                    "internal_port": "8443",
+                    "external_port": "443",
+                    "ipaddr": "192.168.0.72",
+                    "protocol": "TCP",
+                    "enable": "on",
+                }
+            ]
+        if base_path == cli.PORT_SPEED_CURRENT:
+            return {"speed": "1000F"}
+        if base_path == cli.PORT_SPEED_SUPPORTED:
+            return {"supported": ["auto", "1000F", "100F", "100H", "10F", "10H"]}
+        if base_path == cli.NETWORK_STATUS_IPV6:
+            return {
+                "wan_ipv6_enable": "on",
+                "wan_ipv6_ip6addr": "2601::1/64",
+                "wan_ipv6_gateway": "fe80::1",
+                "wan_ipv6_pridns": "2001:4860:4860::8888",
+                "wan_ipv6_snddns": "2001:4860:4860::8844",
+                "wan_ipv6_conntype": "dhcpv6",
+                "lan_ipv6_ipaddr": "FE80::6A7F:F0FF:FE3B:1CA0/64",
+                "lan_ipv6_assign_type": "slaac",
+                "lan_ipv6_link_local_addr": "FE80::6A7F:F0FF:FE3B:1CA0/64",
+            }
+        if base_path == cli.NETWORK_LAN_IPV6:
+            return {
+                "address": "2601::6a7f:f0ff:fe3b:1ca0/64",
+                "assign_type": "slaac",
+                "dhcp_prefix": "",
+                "slaac_prefix": "2601::/64",
+            }
+        if base_path == cli.EASYMESH_DEVICE_LIST:
+            return [
+                {
+                    "mac": "68-7F-F0-3B-1C-A0",
+                    "client_num": 4,
+                    "ip": "192.168.0.1",
+                    "role": "main_router",
+                    "name": "Archer BE3500",
+                    "model": "Archer BE3500",
+                    "status": "connected",
+                    "location": "bedroom",
+                    "vendor": "TP-Link",
+                    "device_type": "WirelessRouter",
+                }
+            ]
+        if base_path == cli.WIREGUARD_CONFIG:
+            return {
+                "enable": True,
+                "listen_port": "51820",
+                "address": "10.5.5.1/32",
+                "public_key": "agvcmR8FY3Y4phfJaCC5b0UnOoHqYxrHGJDHKMhi3Uc=",
+                "persistent_keepalive": "25",
+                "dns": True,
+                "private_key": "sDfwQQpn3mKGETYQTgUv+ZzEVPVbCJdDJtLnNvkyXHo=",
+            }
         return {}
 
     def set_vpn_client_device(self, mac, enable):
@@ -803,6 +862,46 @@ class CliTests(unittest.TestCase):
         self.assertEqual(routes[0]["name"], "internetAdv")
         self.assertEqual(endpoints[0]["endpoint"], "/admin/network?form=wan_fc")
         self.assertEqual(endpoints[1]["endpoint"], "/admin/network?form=wan_ipv4_status")
+
+    def test_port_forward_lists_rules(self):
+        output = run_cli(["--json", "--no-input", "port-forward"])
+        data = json.loads(output)
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["name"], "NPM-HTTPS")
+        self.assertEqual(data[0]["external_port"], "443")
+        self.assertEqual(data[0]["internal_port"], "8443")
+
+    def test_ports_reports_link_speed_and_supported(self):
+        output = run_cli(["--json", "--no-input", "ports"])
+        data = json.loads(output)
+        self.assertEqual(data["speed"], "1000F")
+        self.assertIn("auto", data["supported"])
+        self.assertIn("1000F", data["supported"])
+
+    def test_ipv6_reports_wan_and_lan(self):
+        output = run_cli(["--json", "--no-input", "ipv6"])
+        data = json.loads(output)
+        self.assertTrue(data["wan"]["enabled"])
+        self.assertEqual(data["wan"]["connection_type"], "dhcpv6")
+        self.assertEqual(data["lan"]["assign_type"], "slaac")
+        self.assertIn("6a7f", data["lan"]["address"].lower())
+
+    def test_mesh_reports_nodes(self):
+        output = run_cli(["--json", "--no-input", "mesh"])
+        data = json.loads(output)
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["role"], "main_router")
+        self.assertEqual(data[0]["name"], "Archer BE3500")
+        self.assertEqual(data[0]["client_num"], 4)
+
+    def test_wireguard_reports_config_and_preserves_public_key(self):
+        output = run_cli(["--json", "--no-input", "wireguard"])
+        data = json.loads(output)
+        self.assertTrue(data["enabled"])
+        self.assertEqual(data["listen_port"], 51820)
+        self.assertEqual(data["address"], "10.5.5.1/32")
+        self.assertTrue(data["public_key"].startswith("agvcmR"))
+        self.assertNotIn("private_key", data)
 
 
 if __name__ == "__main__":

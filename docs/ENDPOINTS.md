@@ -44,6 +44,13 @@ DNS values (`1.1.1.1`, `8.8.8.8`) are currently observed from router status/DHCP
 | `/admin/wireless?form=wireless_2g` | SG JSON request with `operation=read/write` in URL and body | ✓ first-class `wifi-config host_2g` works |
 | `/admin/cloud_account?form=cloud_upgrade` | SG JSON request with `operation=read` in URL and body | ✓ `firmware-check` update availability |
 | `/admin/firmware?form=auto_upgrade` | SG JSON request with `operation=read` in URL and body | ✓ `firmware-check` auto-update status |
+| `/admin/nat?form=vs` | SG JSON request with `operation=read` | ✓ first-class `port-forward` works |
+| `/admin/network?form=port_speed_current` | SG JSON request with `operation=read` | ✓ first-class `ports` works |
+| `/admin/network?form=port_speed_supported` | SG JSON request with `operation=read` | ✓ first-class `ports` works |
+| `/admin/network?form=status_ipv6` | SG JSON request with `operation=read` | ✓ first-class `ipv6` works |
+| `/admin/network?form=lan_ipv6` | SG JSON request with `operation=read` | ✓ first-class `ipv6` works |
+| `/admin/easymesh_network?form=get_mesh_device_list_all` | SG JSON request with `operation=read` | ✓ first-class `mesh` works |
+| `/admin/wireguard?form=config` | SG JSON request with `operation=read` | ✓ first-class `wireguard` works |
 | `/admin/lan?form=setting` | any | ✗ encrypted response (different cipher) |
 
 The `wan_fc` and LED discoveries are notable: the router requires `operation` in the URL path as well as the encrypted body. `tplinkctl read` now applies this placement automatically. For SG/BE-series mutation endpoints, the working pattern is to append payload keys into the URL and encrypt a JSON object body.

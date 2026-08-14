@@ -211,6 +211,26 @@ def argv_wifi_config(arguments: dict[str, Any], *, plan: bool) -> list[str]:
     return argv
 
 
+def argv_port_forward(_: dict[str, Any]) -> list[str]:
+    return base_argv() + ["port-forward"]
+
+
+def argv_port_speed(_: dict[str, Any]) -> list[str]:
+    return base_argv() + ["ports"]
+
+
+def argv_ipv6_status(_: dict[str, Any]) -> list[str]:
+    return base_argv() + ["ipv6"]
+
+
+def argv_mesh_devices(_: dict[str, Any]) -> list[str]:
+    return base_argv() + ["mesh"]
+
+
+def argv_wireguard_status(_: dict[str, Any]) -> list[str]:
+    return base_argv() + ["wireguard"]
+
+
 TOOL_BUILDERS: dict[str, Callable[[dict[str, Any]], list[str]]] = {
     "router_status": argv_status,
     "firmware_audit": argv_firmware_audit,
@@ -224,6 +244,11 @@ TOOL_BUILDERS: dict[str, Callable[[dict[str, Any]], list[str]]] = {
     "device_unblock": argv_device_unblock,
     "wifi_config_plan": lambda args: argv_wifi_config(args, plan=True),
     "wifi_config": lambda args: argv_wifi_config(args, plan=False),
+    "port_forward_list": argv_port_forward,
+    "port_speed": argv_port_speed,
+    "ipv6_status": argv_ipv6_status,
+    "mesh_devices": argv_mesh_devices,
+    "wireguard_status": argv_wireguard_status,
     "doctor_deep": argv_doctor_deep,
     "watch": argv_watch,
     "audit_tail": argv_audit_tail,

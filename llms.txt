@@ -17,6 +17,11 @@
 - Safe LED plan: `tplinkctl --json --no-input led schedule on --start 23:00 --end 07:00 --plan`
 - Broad state snapshot: `tplinkctl --json --no-input snapshot`
 - Current status: `tplinkctl --json --no-input status`
+- Port forwarding rules: `tplinkctl --json --no-input port-forward`
+- Port link negotiation: `tplinkctl --json --no-input ports`
+- IPv6 WAN/LAN status: `tplinkctl --json --no-input ipv6`
+- EasyMesh topology: `tplinkctl --json --no-input mesh`
+- WireGuard server state: `tplinkctl --json --no-input wireguard`
 - Connected devices: `tplinkctl --json --no-input devices --active`
 - Device detail: `tplinkctl --json --no-input device <hostname-or-ip-or-mac>`
 - Monitor loop: `tplinkctl --json --no-input watch devices --active --count 3`

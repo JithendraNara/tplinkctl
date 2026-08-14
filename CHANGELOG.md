@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- `port-forward` command and `port_forward_list` MCP tool to list active NAT virtual servers / port forwarding rules.
+- `ports` command and `port_speed` MCP tool to inspect physical Ethernet port link negotiation and supported speeds.
+- `ipv6` command and `ipv6_status` MCP tool to inspect dual-stack WAN/LAN IPv6 configurations (SLAAC, prefix delegation, gateway, DNS).
+- `mesh` command and `mesh_devices` MCP tool to list EasyMesh network topology, node roles, and client counts.
+- `wireguard` command and `wireguard_status` MCP tool to inspect WireGuard VPN server configuration and status while preserving public key availability and redacting sensitive keys.
+
 ### Changed
 
 - Update `KNOWN_QUIRKS` and doctor probe baselines to track Archer BE3500 firmware `1.3.3 Build 20260618 rel.36036(5553)` alongside `1.1.3 Build 20251120`.

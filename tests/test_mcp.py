@@ -42,6 +42,11 @@ class McpTests(unittest.TestCase):
         self.assertIn("led_plan", names)
         self.assertIn("led_set", names)
         self.assertIn("device_plan", names)
+        self.assertIn("port_forward_list", names)
+        self.assertIn("port_speed", names)
+        self.assertIn("ipv6_status", names)
+        self.assertIn("mesh_devices", names)
+        self.assertIn("wireguard_status", names)
         self.assertIn("watch", names)
         self.assertIn("audit_tail", names)
         self.assertIn("state_snapshot", names)
@@ -163,6 +168,27 @@ class McpTests(unittest.TestCase):
         self.assertEqual(argv[argv.index("--only") + 1], "wifi")
         self.assertIn("signal_dbm", argv)
         self.assertIn("devices[0]", argv)
+
+    def test_new_read_only_mcp_tools(self):
+        pf = call_tool_with_fake_router("port_forward_list")
+        self.assertFalse(pf["isError"])
+        self.assertEqual(json.loads(pf["content"][0]["text"])[0]["name"], "NPM-HTTPS")
+
+        ps = call_tool_with_fake_router("port_speed")
+        self.assertFalse(ps["isError"])
+        self.assertEqual(json.loads(ps["content"][0]["text"])["speed"], "1000F")
+
+        ip6 = call_tool_with_fake_router("ipv6_status")
+        self.assertFalse(ip6["isError"])
+        self.assertTrue(json.loads(ip6["content"][0]["text"])["wan"]["enabled"])
+
+        mesh = call_tool_with_fake_router("mesh_devices")
+        self.assertFalse(mesh["isError"])
+        self.assertEqual(json.loads(mesh["content"][0]["text"])[0]["role"], "main_router")
+
+        wg = call_tool_with_fake_router("wireguard_status")
+        self.assertFalse(wg["isError"])
+        self.assertTrue(json.loads(wg["content"][0]["text"])["enabled"])
 
 
 if __name__ == "__main__":
