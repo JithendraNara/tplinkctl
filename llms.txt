@@ -29,6 +29,7 @@
 - Advanced Wi-Fi radios (OFDMA, TWT, DFS channels): `tplinkctl --json --no-input wifi-advanced`
 - Dynamic DNS provider: `tplinkctl --json --no-input ddns`
 - IPTV / VLAN / IGMP: `tplinkctl --json --no-input iptv`
+- CLI contract (clispec v0.2): `tplinkctl schema`
 - WireGuard server state: `tplinkctl --json --no-input wireguard`
 - Connected devices: `tplinkctl --json --no-input devices --active`
 - Device detail: `tplinkctl --json --no-input device <hostname-or-ip-or-mac>`

@@ -1052,6 +1052,55 @@ class CliTests(unittest.TestCase):
         self.assertEqual(data["power_mode"], "balanced")
         self.assertTrue(data["smart_eco"])
 
+    def test_schema_emits_clispec_v0_2_contract(self):
+        output = run_cli(["schema"])
+        data = json.loads(output)
+        self.assertEqual(data["clispec"], "0.2")
+        self.assertEqual(data["name"], "tplinkctl")
+        self.assertEqual(data["command_layout"], "flat")
+        names = {item["name"] for item in data["commands"]}
+        self.assertIn("schema", names)
+        self.assertIn("status", names)
+        self.assertIn("device block", names)
+        kinds = {item["kind"] for item in data["errors"]}
+        self.assertEqual(kinds, set(cli.ERROR_CATALOG))
+        device_block = next(item for item in data["commands"] if item["name"] == "device block")
+        self.assertTrue(device_block["mutating"])
+        status = next(item for item in data["commands"] if item["name"] == "status")
+        self.assertFalse(status["mutating"])
+
+    def test_schema_can_narrow_to_a_command_path(self):
+        output = run_cli(["schema", "device"])
+        data = json.loads(output)
+        names = {item["name"] for item in data["commands"]}
+        self.assertTrue(names)
+        self.assertTrue(all(name == "device" or name.startswith("device ") for name in names))
+        self.assertNotIn("status", names)
+
+    def test_dry_run_is_an_alias_for_plan(self):
+        output = run_cli(["--json", "--no-input", "device", "block", "debian", "--dry-run"])
+        data = json.loads(output)
+        self.assertTrue(data["plan"])
+        self.assertEqual(data["action"], "device.block")
+
+    def test_run_emits_structured_error_and_semantic_exit_code(self):
+        err = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp}, clear=False):
+            with contextlib.redirect_stderr(err):
+                code = cli.run(["--disable-commands", "status", "status"])
+        self.assertEqual(code, 4)
+        envelope = json.loads(err.getvalue().strip().splitlines()[-1])
+        self.assertEqual(envelope["error"]["kind"], "permission")
+
+    def test_run_uses_confirmation_required_exit_code(self):
+        err = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp}, clear=False), patch.object(cli, "build_router", return_value=FakeRouter()):
+            with contextlib.redirect_stderr(err):
+                code = cli.run(["--json", "--no-input", "device", "reserve", "debian"])
+        self.assertEqual(code, 5)
+        envelope = json.loads(err.getvalue().strip().splitlines()[-1])
+        self.assertEqual(envelope["error"]["kind"], "confirmation_required")
+
 
 if __name__ == "__main__":
     unittest.main()

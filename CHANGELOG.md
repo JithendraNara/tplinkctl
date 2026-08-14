@@ -16,10 +16,13 @@
 - `wifi-advanced` command and `wifi_advanced` MCP tool to inspect OFDMA, OFDMA MIMO, TWT, Smart Connect, DFS channel availability, radio schedule, and region.
 - `ddns` command and `ddns_status` MCP tool to inspect the configured dynamic DNS provider.
 - `iptv` command and `iptv_status` MCP tool to inspect IPTV/VLAN mode, IGMP snooping, and LAN port assignments.
+- `schema` command emitting a clispec v0.2 machine-readable CLI contract (`name`, `version`, commands, error kinds, mutating flags). Offline, no auth.
+- `--dry-run` as an alias for `--plan` on mutating commands.
 - `wireguard` command and `wireguard_status` MCP tool to inspect WireGuard VPN server configuration and status while preserving public key availability and redacting sensitive keys.
 
 ### Changed
 
+- Installed entry points (`tplinkctl`, `tpadmin`) now go through `run()`, which prints a clispec error envelope on stderr and returns semantic exit codes: `2` usage, `3` not_found, `4` permission, `5` confirmation_required, `6` auth, `1` router/conflict/internal.
 - Update `KNOWN_QUIRKS` and doctor probe baselines to track Archer BE3500 firmware `1.3.3 Build 20260618 rel.36036(5553)` alongside `1.1.3 Build 20251120`.
 
 ## v0.4.1 - 2026-08-12

@@ -62,6 +62,48 @@ COMMAND_ENV = {
     "disable": "TPLINK_DISABLE_COMMANDS",
 }
 PROFILE_ENV = "TPLINK_PROFILE"
+ERROR_CATALOG = {
+    "usage": {"exit_code": 2, "retryable": False, "description": "Invalid arguments, unknown profile, or missing required flags."},
+    "not_found": {"exit_code": 3, "retryable": False, "description": "Requested device, snapshot, or resource was not found."},
+    "permission": {"exit_code": 4, "retryable": False, "description": "Command blocked by profile, allowlist, or denylist."},
+    "confirmation_required": {"exit_code": 5, "retryable": False, "description": "Mutation refused because --yes was not provided."},
+    "auth": {"exit_code": 6, "retryable": False, "description": "Router password missing or authentication failed."},
+    "router": {"exit_code": 1, "retryable": True, "description": "Router returned an error or unreadable response."},
+    "conflict": {"exit_code": 1, "retryable": False, "description": "Ambiguous query or router state did not match the requested change."},
+    "internal": {"exit_code": 1, "retryable": False, "description": "Unexpected local CLI failure."},
+}
+
+
+class CliError(SystemExit):
+    """Structured CLI failure. `str(exc)` stays the human message for tests."""
+
+    def __init__(self, message: str, *, kind: str, hint: str | None = None, details: dict[str, Any] | None = None) -> None:
+        if kind not in ERROR_CATALOG:
+            raise ValueError(f"unknown error kind `{kind}`")
+        super().__init__(message)
+        self.kind = kind
+        self.hint = hint
+        self.details = details or {}
+        self.exit_code = ERROR_CATALOG[kind]["exit_code"]
+
+    def envelope(self) -> dict[str, Any]:
+        error: dict[str, Any] = {"kind": self.kind, "message": str(self)}
+        if self.hint:
+            error["hint"] = self.hint
+        if self.details:
+            error["details"] = self.details
+        return {"error": error}
+
+
+def fail(kind: str, message: str, *, hint: str | None = None, details: dict[str, Any] | None = None) -> None:
+    raise CliError(message, kind=kind, hint=hint, details=details)
+
+
+def emit_error(exc: CliError) -> None:
+    print(str(exc), file=sys.stderr)
+    print(json.dumps(exc.envelope(), sort_keys=True), file=sys.stderr)
+
+
 READ_COMMANDS = {
     "capabilities",
     "clients",
@@ -88,6 +130,7 @@ READ_COMMANDS = {
     "read",
     "reservations",
     "routes",
+    "schema",
     "snapshot",
     "speed",
     "state",
@@ -142,6 +185,7 @@ READ_OPERATIONS = {
     "agent.demo",
     "agent.doctor",
     "agent.events",
+    "agent.schema",
     "agent.state",
     "agent.tools",
     "agent.watch",
@@ -269,6 +313,7 @@ KNOWN_QUIRKS = [
 ]
 CAPABILITIES = [
     {"id": "agent.capabilities", "command": "capabilities", "type": "agent_discovery", "requires_auth": False, "output": ["json", "plain"], "status": "supported"},
+    {"id": "agent.schema", "command": "schema", "type": "agent_discovery", "requires_auth": False, "output": ["json"], "status": "supported", "note": "clispec v0.2 machine-readable CLI contract. Offline, no auth."},
     {"id": "agent.demo", "command": "demo [--live]", "type": "demo_report", "requires_auth": "live only", "output": ["json", "plain"], "status": "supported"},
     {"id": "agent.events", "command": "events", "type": "audit_read", "requires_auth": False, "output": ["json", "plain"], "status": "supported"},
     {"id": "agent.state", "command": "state <save|show|diff>", "type": "local_state", "requires_auth": "save only", "output": ["json", "plain"], "status": "supported"},
@@ -927,14 +972,14 @@ def api_request(
         decrypted = json.loads(decrypted_text)
     except Exception as exc:
         detail = decrypted_text.strip() if "decrypted_text" in locals() else str(exc)
-        raise SystemExit(f"Router returned an unreadable response for `{path}`: {detail}") from exc
+        fail("router", f"Router returned an unreadable response for `{path}`: {detail}")
 
     data_block = getattr(router, "_data_block", "data")
     if isinstance(decrypted, dict) and decrypted.get("success") and data_block in decrypted:
         return decrypted[data_block]
     if ignore_errors:
         return decrypted
-    raise SystemExit(f"Router returned an error for `{path}`: {decrypted}")
+    fail("router", f"Router returned an error for `{path}`: {decrypted}")
 
 
 def is_private_ip(value: str | None) -> bool:
@@ -1058,7 +1103,7 @@ def match_device(row: dict[str, Any], query: str) -> bool:
 def find_device(rows: list[dict[str, Any]], query: str) -> dict[str, Any]:
     matches = [row for row in rows if match_device(row, query)]
     if not matches:
-        raise SystemExit(f"No device matched `{query}`.")
+        fail("not_found", f"No device matched `{query}`.")
     exact = [
         row for row in matches
         if query.lower() in {row["hostname"].lower(), row["ip"].lower()}
@@ -1069,7 +1114,7 @@ def find_device(rows: list[dict[str, Any]], query: str) -> dict[str, Any]:
     if len(matches) == 1:
         return matches[0]
     names = ", ".join(f"{row['hostname']} ({row['ip']}, {row['mac']})" for row in matches[:8])
-    raise SystemExit(f"Device query `{query}` matched multiple devices: {names}")
+    fail("conflict", f"Device query `{query}` matched multiple devices: {names}")
 
 
 def load_device(router, query: str) -> dict[str, Any]:
@@ -1095,7 +1140,7 @@ def insert_payload(new: dict[str, Any], index: int = 0) -> str:
 
 def require_yes(args: argparse.Namespace, action: str) -> None:
     if not getattr(args, "yes", False):
-        raise SystemExit(f"Refusing to {action} without --yes.")
+        fail("confirmation_required", f"Refusing to {action} without --yes.", hint="Re-run with --plan or --dry-run first, then add --yes.")
 
 
 def mutation_plan(
@@ -1918,7 +1963,7 @@ def password_from_args(args: argparse.Namespace) -> str:
     if password:
         return password
     if getattr(args, "no_input", False):
-        raise SystemExit("Password required. Set TPLINK_PASSWORD or pass --password.")
+        fail("auth", "Password required. Set TPLINK_PASSWORD or pass --password.", hint="Export TPLINK_PASSWORD in the agent runtime; do not pass secrets on the command line.")
     return getpass.getpass("TP-Link local admin password: ")
 
 
@@ -2969,7 +3014,7 @@ def cmd_power(args: argparse.Namespace) -> None:
 
 def cmd_reboot(args: argparse.Namespace) -> None:
     if not args.yes and not args.force:
-        raise SystemExit("Refusing to reboot without --yes.")
+        fail("confirmation_required", "Refusing to reboot without --yes.", hint="Re-run reboot with --yes after confirming the outage is acceptable.")
     emit(args, with_session(args, lambda router: router.reboot() or {"reboot": "requested"}))
 
 
@@ -3028,6 +3073,103 @@ def cmd_capabilities(args: argparse.Namespace) -> None:
 
 def cmd_tools(args: argparse.Namespace) -> None:
     emit(args, tool_manifest())
+
+
+def schema_command_name(command: str) -> str:
+    tokens: list[str] = []
+    for tok in command.split():
+        if tok.startswith(("<", "[", "--")):
+            break
+        tokens.append(tok)
+    return " ".join(tokens) or command.split()[0]
+
+
+def schema_document(command_path: list[str] | None = None) -> dict[str, Any]:
+    commands: list[dict[str, Any]] = [
+        {
+            "name": "schema",
+            "description": "Emit the clispec v0.2 machine-readable CLI contract. Offline, no auth.",
+            "mutating": False,
+            "stability": "stable",
+            "args": [
+                {
+                    "name": "command_path",
+                    "type": "string[]",
+                    "required": False,
+                    "description": "Optional command path that narrows the document to a subtree.",
+                }
+            ],
+            "output_fields": [
+                {"name": "clispec", "type": "string", "description": "CLI Spec version this document conforms to."},
+                {"name": "name", "type": "string"},
+                {"name": "version", "type": "string"},
+                {"name": "commands", "type": "array"},
+                {"name": "errors", "type": "array"},
+            ],
+            "example": {"args": []},
+        }
+    ]
+    seen = {"schema"}
+    for cap in CAPABILITIES:
+        name = schema_command_name(str(cap["command"]))
+        if name in seen:
+            continue
+        seen.add(name)
+        cap_type = str(cap.get("type") or "")
+        mutating = cap_type == "mutation" or cap_type == "read_or_mutation" or bool(cap.get("requires_confirmation"))
+        if cap_type in {
+            "read",
+            "agent_discovery",
+            "audit_read",
+            "local_state",
+            "read_monitor",
+            "local_discovery",
+            "advanced_read",
+            "demo_report",
+            "external_network_test",
+        }:
+            mutating = False
+        stability = "experimental" if cap.get("status") == "firmware_error" else "stable"
+        entry: dict[str, Any] = {
+            "name": name,
+            "description": cap.get("note") or cap["id"],
+            "mutating": mutating,
+            "stability": stability,
+        }
+        args: list[dict[str, Any]] = []
+        if mutating:
+            args.append({"name": "--plan", "type": "boolean", "description": "Show the planned change without mutating router state."})
+            args.append({"name": "--dry-run", "type": "boolean", "description": "Alias for --plan."})
+            args.append({"name": "--yes", "type": "boolean", "description": "Confirm a mutation. Required without a TTY."})
+        if args:
+            entry["args"] = args
+        commands.append(entry)
+    if command_path:
+        prefix = " ".join(command_path)
+        commands = [item for item in commands if item["name"] == prefix or item["name"].startswith(prefix + " ")]
+    return {
+        "clispec": "0.2",
+        "name": "tplinkctl",
+        "version": __version__,
+        "description": "CLI and MCP server for a local TP-Link Archer BE-series router.",
+        "command_layout": "flat",
+        "global_args": [
+            {"name": "--json", "type": "boolean", "description": "Print JSON to stdout."},
+            {"name": "--plain", "type": "boolean", "description": "Print stable TSV/key-value text to stdout."},
+            {"name": "--no-input", "type": "boolean", "description": "Never prompt; fail if required input is missing."},
+            {"name": "--profile", "type": "string", "enum": sorted(POLICY_PROFILES), "description": "Agent policy profile."},
+            {"name": "--reason", "type": "string", "description": "Short reason recorded in the audit log."},
+            {"name": "--enable-commands", "type": "string", "description": "Comma-separated command allowlist."},
+            {"name": "--disable-commands", "type": "string", "description": "Comma-separated command denylist."},
+        ],
+        "commands": commands,
+        "errors": [{"kind": kind, **meta} for kind, meta in ERROR_CATALOG.items()],
+        "output": {"tty": "text", "piped": "text"},
+    }
+
+
+def cmd_schema(args: argparse.Namespace) -> None:
+    print_json(schema_document(getattr(args, "command_path", None)))
 
 
 def cmd_demo(args: argparse.Namespace) -> None:
@@ -3294,22 +3436,27 @@ def ensure_command_allowed(args: argparse.Namespace) -> None:
     if profile_name:
         profile = POLICY_PROFILES.get(profile_name)
         if profile is None:
-            raise SystemExit(f"Unknown profile `{profile_name}`; choose one of: {', '.join(sorted(POLICY_PROFILES))}")
+            fail("usage", f"Unknown profile `{profile_name}`; choose one of: {', '.join(sorted(POLICY_PROFILES))}")
         allowed_commands = set(profile["allow_commands"])
         allowed_operations = set(profile["allow_operations"])
         denied_operations = set(profile["deny_operations"])
         if operation in denied_operations:
-            raise SystemExit(f"Operation `{operation}` blocked by profile `{profile_name}`.")
+            fail("permission", f"Operation `{operation}` blocked by profile `{profile_name}`.")
         if "*" not in allowed_commands and command not in allowed_commands:
-            raise SystemExit(f"Command `{command}` blocked by profile `{profile_name}`.")
+            fail("permission", f"Command `{command}` blocked by profile `{profile_name}`.")
         if "*" not in allowed_operations and operation not in allowed_operations:
-            raise SystemExit(f"Operation `{operation}` blocked by profile `{profile_name}`.")
+            fail("permission", f"Operation `{operation}` blocked by profile `{profile_name}`.")
     enabled = parse_csv(args.enable_commands) or parse_csv(os.getenv(COMMAND_ENV["enable"]))
     disabled = parse_csv(args.disable_commands) or parse_csv(os.getenv(COMMAND_ENV["disable"]))
     if enabled and command not in enabled and operation not in enabled:
-        raise SystemExit(f"Command `{command}` / operation `{operation}` blocked by allowlist: {', '.join(sorted(enabled))}")
+        fail("permission", f"Command `{command}` / operation `{operation}` blocked by allowlist: {', '.join(sorted(enabled))}")
     if command in disabled or operation in disabled:
-        raise SystemExit(f"Command `{command}` / operation `{operation}` blocked by denylist.")
+        fail("permission", f"Command `{command}` / operation `{operation}` blocked by denylist.")
+
+
+def add_plan_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--plan", action="store_true", help="show the planned change without mutating router state")
+    parser.add_argument("--dry-run", action="store_true", dest="plan", help="alias for --plan")
 
 
 def add_common(parser: argparse.ArgumentParser) -> None:
@@ -3388,7 +3535,7 @@ def build_device_access_parser() -> argparse.ArgumentParser:
     parser = device_action_parser("tplinkctl device access", "Show or change access-control enforcement.")
     parser.add_argument("access_state", choices=["status", "on", "off"], help="status, on, or off")
     parser.add_argument("--mode", choices=["black", "white"], help="set blacklist or whitelist mode when turning access control on/off")
-    parser.add_argument("--plan", action="store_true", help="show the planned change without mutating router state")
+    add_plan_flags(parser)
     parser.add_argument("--yes", action="store_true", help="confirm access-control change")
     parser.set_defaults(func=cmd_device_access)
     return parser
@@ -3399,7 +3546,7 @@ def build_device_reserve_parser() -> argparse.ArgumentParser:
     parser.add_argument("query", help="device hostname substring, IP address, or MAC address")
     parser.add_argument("--ip", help="reserved IP address; defaults to the device's current IP")
     parser.add_argument("--name", help="reservation hostname; defaults to the current device name")
-    parser.add_argument("--plan", action="store_true", help="show the planned change without mutating router state")
+    add_plan_flags(parser)
     parser.add_argument("--yes", action="store_true", help="confirm reservation creation")
     parser.set_defaults(func=cmd_device_reserve)
     return parser
@@ -3408,7 +3555,7 @@ def build_device_reserve_parser() -> argparse.ArgumentParser:
 def build_device_release_parser() -> argparse.ArgumentParser:
     parser = device_action_parser("tplinkctl device release", "Remove a DHCP reservation.")
     parser.add_argument("query", help="reservation hostname, IP address, or MAC address")
-    parser.add_argument("--plan", action="store_true", help="show the planned change without mutating router state")
+    add_plan_flags(parser)
     parser.add_argument("--yes", action="store_true", help="confirm reservation removal")
     parser.set_defaults(func=cmd_device_release)
     return parser
@@ -3418,7 +3565,7 @@ def build_device_block_parser() -> argparse.ArgumentParser:
     parser = device_action_parser("tplinkctl device block", "Add a device to the access-control blacklist.")
     parser.add_argument("query", help="device hostname substring, IP address, or MAC address")
     parser.add_argument("--enforce", action="store_true", help="also enable Access Control and set blacklist mode")
-    parser.add_argument("--plan", action="store_true", help="show the planned change without mutating router state")
+    add_plan_flags(parser)
     parser.add_argument("--yes", action="store_true", help="confirm blacklist change")
     parser.set_defaults(func=cmd_device_block)
     return parser
@@ -3427,7 +3574,7 @@ def build_device_block_parser() -> argparse.ArgumentParser:
 def build_device_unblock_parser() -> argparse.ArgumentParser:
     parser = device_action_parser("tplinkctl device unblock", "Remove a device from the access-control blacklist.")
     parser.add_argument("query", help="blacklist hostname, IP address, or MAC address")
-    parser.add_argument("--plan", action="store_true", help="show the planned change without mutating router state")
+    add_plan_flags(parser)
     parser.add_argument("--yes", action="store_true", help="confirm blacklist removal")
     parser.set_defaults(func=cmd_device_unblock)
     return parser
@@ -3437,7 +3584,7 @@ def build_device_vpn_parser() -> argparse.ArgumentParser:
     parser = device_action_parser("tplinkctl device vpn", "Include or exclude a device from VPN client routing.")
     parser.add_argument("query", help="device hostname substring, IP address, or MAC address")
     parser.add_argument("enabled", type=bool_arg, help="on/off")
-    parser.add_argument("--plan", action="store_true", help="show the planned change without mutating router state")
+    add_plan_flags(parser)
     parser.add_argument("--yes", action="store_true", help="confirm VPN client device change")
     parser.set_defaults(func=cmd_device_vpn)
     return parser
@@ -3446,7 +3593,7 @@ def build_device_vpn_parser() -> argparse.ArgumentParser:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="tplinkctl",
-        description="Manage a TP-Link router admin page from the terminal.",
+        description="Manage a TP-Link router admin page from the terminal. Run `tplinkctl schema` for the machine-readable CLI contract.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     add_common(parser)
@@ -3455,6 +3602,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     capabilities = subparsers.add_parser("capabilities", help="print the agent-readable command and safety manifest")
     capabilities.set_defaults(func=cmd_capabilities)
+
+    schema = subparsers.add_parser("schema", help="print the clispec v0.2 machine-readable CLI contract")
+    schema.add_argument("command_path", nargs="*", help="optional command path that narrows the schema document")
+    schema.set_defaults(func=cmd_schema)
 
     tools = subparsers.add_parser("tools", help="print agent tool schemas for local CLI execution")
     tools.set_defaults(func=cmd_tools)
@@ -3518,7 +3669,7 @@ def build_parser() -> argparse.ArgumentParser:
     wifi_config.add_argument("--width", "--htmode", help="channel width / htmode (e.g. 20, 40, 80, 160, auto)")
     wifi_config.add_argument("--txpower", choices=["low", "middle", "high"], help="transmit power level")
     wifi_config.add_argument("--ssid", help="Wi-Fi network SSID")
-    wifi_config.add_argument("--plan", action="store_true", help="show the planned change without mutating router state")
+    add_plan_flags(wifi_config)
     wifi_config.add_argument("--yes", action="store_true", help="confirm Wi-Fi radio configuration change")
     wifi_config.set_defaults(func=cmd_wifi_config)
 
@@ -3532,14 +3683,14 @@ def build_parser() -> argparse.ArgumentParser:
     led_status_parser.set_defaults(func=cmd_led)
     for led_action in ("on", "off"):
         led_toggle = led_subparsers.add_parser(led_action, help=f"turn router LEDs {led_action}")
-        led_toggle.add_argument("--plan", action="store_true", help="show the planned change without mutating router state")
+        add_plan_flags(led_toggle)
         led_toggle.add_argument("--yes", action="store_true", help="confirm LED change")
         led_toggle.set_defaults(func=cmd_led)
     led_schedule = led_subparsers.add_parser("schedule", help="configure the nightly LED-off window")
     led_schedule.add_argument("enabled", type=bool_arg, help="on/off")
     led_schedule.add_argument("--start", type=time_arg, help="start of LED-off window in HH:MM")
     led_schedule.add_argument("--end", type=time_arg, help="end of LED-off window in HH:MM")
-    led_schedule.add_argument("--plan", action="store_true", help="show the planned change without mutating router state")
+    add_plan_flags(led_schedule)
     led_schedule.add_argument("--yes", action="store_true", help="confirm schedule change")
     led_schedule.set_defaults(func=cmd_led)
 
@@ -3640,5 +3791,13 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def run(argv: list[str] | None = None) -> int:
+    try:
+        return main(argv)
+    except CliError as exc:
+        emit_error(exc)
+        return exc.exit_code
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run())

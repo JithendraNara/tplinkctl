@@ -5,13 +5,14 @@ This runbook shows the safe operating loop for an AI agent managing a local TP-L
 ## 1. Discover
 
 ```bash
+tplinkctl schema
 tplinkctl --json capabilities
 tplinkctl --json tools
 tplinkctl --json --no-input firmware-check
 tplinkctl --json demo
 ```
 
-Use `capabilities` for policy/risk metadata, `tools` for MCP-style wrappers, and `demo` for a compact workflow report.
+Use `schema` for the clispec v0.2 command/error contract, `capabilities` for policy/risk metadata, `tools` for MCP-style wrappers, and `demo` for a compact workflow report.
 
 ## 2. Verify Readiness
 
