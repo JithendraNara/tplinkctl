@@ -198,13 +198,19 @@ KNOWN_QUIRKS = [
     },
     {
         "id": "vpn-user-list-dispatcher-error",
-        "applies_to": ["Archer BE3500 firmware 1.1.3 Build 20251120"],
+        "applies_to": [
+            "Archer BE3500 firmware 1.1.3 Build 20251120",
+            "Archer BE3500 firmware 1.3.3 Build 20260618",
+        ],
         "summary": "The live router returns a Lua dispatcher error for admin/vpn?form=vpn_user_list on this firmware.",
         "affects": ["device.vpn"],
     },
     {
         "id": "vpn-client-status-response-error",
-        "applies_to": ["Archer BE3500 firmware 1.1.3 Build 20251120"],
+        "applies_to": [
+            "Archer BE3500 firmware 1.1.3 Build 20251120",
+            "Archer BE3500 firmware 1.3.3 Build 20260618",
+        ],
         "summary": "The live router returns an unreadable response for the VPN client status endpoint on this firmware.",
         "affects": ["vpn.client_status"],
     },

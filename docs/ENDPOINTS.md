@@ -11,9 +11,9 @@ tplinkctl --json endpoints --form network
 
 The no-login `doctor` command detected:
 
-- UI version: `BE220v1_1.11.0_2025-08-06T05:59:48.483Z`
+- UI version: `BE220v1_1.12.1_2026-02-09T08:24:41.790Z` (previously `BE220v1_1.11.0_2025-08-06T05:59:48.483Z`)
 - Runtime model from authenticated firmware: `Archer BE3500`
-- Firmware: `1.1.3 Build 20251120 rel.38341(5553)`
+- Firmware: `1.3.3 Build 20260618 rel.36036(5553)` (and tested on `1.1.3 Build 20251120 rel.38341(5553)`)
 
 ## Verified Working Endpoints
 

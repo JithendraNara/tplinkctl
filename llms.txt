@@ -46,7 +46,7 @@
 
 ## Known Router Notes
 
-- Live verified target: Archer BE3500, firmware `1.1.3 Build 20251120 rel.38341(5553)`.
+- Live verified target: Archer BE3500, firmware `1.3.3 Build 20260618 rel.36036(5553)` (and `1.1.3 Build 20251120 rel.38341(5553)`).
 - `device reserve`, `device release`, `device block`, and `device unblock` are live verified.
 - `device vpn` is currently marked `firmware_error` because the tested router returns a Lua dispatcher error for `admin/vpn?form=vpn_user_list`.
 - `vpn-client-status` is currently marked `firmware_error` because the tested router returns an unreadable response.

@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- Update `KNOWN_QUIRKS` and doctor probe baselines to track Archer BE3500 firmware `1.3.3 Build 20260618 rel.36036(5553)` alongside `1.1.3 Build 20251120`.
+
 ## v0.4.1 - 2026-08-12
 
 ### Fixed

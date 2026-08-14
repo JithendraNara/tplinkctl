@@ -12,3 +12,5 @@ js/
 assets/
 ui_bundles/
 .gstack/
+uv.lock
+.pytest_cache/

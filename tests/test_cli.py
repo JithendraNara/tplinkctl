@@ -776,6 +776,9 @@ class CliTests(unittest.TestCase):
         self.assertEqual(data["router"]["model"], "Archer BE3500")
         self.assertIn("device.access", probe_ids)
         self.assertIn("vpn.user_list", probe_ids)
+        quirk_ids = {q["id"]: q["applies_to"] for q in data.get("known_quirks", [])}
+        self.assertIn("vpn-user-list-dispatcher-error", quirk_ids)
+        self.assertIn("Archer BE3500 firmware 1.3.3 Build 20260618", quirk_ids["vpn-user-list-dispatcher-error"])
 
     def test_denylist_blocks_command(self):
         with self.assertRaises(SystemExit) as raised:
