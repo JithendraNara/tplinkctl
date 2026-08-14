@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## v0.5.1 - 2026-08-14
+
+### Changed
+
+- Upgrade `tplinkrouterc6u` dependency to `>=5.30.0`.
+- Add SG query-to-JSON payload normalizer to eliminate `"no such callback"` responses on BE-series routers.
+- Align project license to GNU GPLv3 or later (GPL-3.0-or-later).
+- Redesign `README.md` with structured tables, clispec v0.2 contract documentation, and MCP tool matrix.
+
 ## v0.5.0 - 2026-08-14
 
 ### Added
