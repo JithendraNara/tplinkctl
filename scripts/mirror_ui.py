@@ -10,7 +10,6 @@ from urllib.parse import urljoin
 
 import requests
 
-
 IMPORT_RE = re.compile(r"""["']\./([^"']+\.js)["']""")
 
 

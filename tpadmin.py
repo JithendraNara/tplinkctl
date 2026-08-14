@@ -3,6 +3,5 @@
 
 from tplink_admin.cli import run as main
 
-
 if __name__ == "__main__":
     raise SystemExit(main())

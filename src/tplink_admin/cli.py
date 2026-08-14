@@ -7,31 +7,31 @@ import dataclasses
 import enum
 import fcntl
 import getpass
-from hashlib import sha256
 import ipaddress
 import json
 import os
 import re
 import sys
 import time
-from datetime import datetime, timezone
 from collections.abc import Iterable
 from contextlib import contextmanager
+from datetime import datetime, timezone
+from hashlib import sha256
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, quote, urlencode, urljoin
 
-from . import __version__
-
 import requests
+
+from . import __version__
 
 try:
     from tplinkrouterc6u import (
+        VPN,
         Connection,
         TplinkRouterProvider,
         TplinkRouterSG,
-        VPN,
     )
 
     if not getattr(TplinkRouterSG, "_tplinkctl_patched", False):

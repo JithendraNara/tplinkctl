@@ -5,9 +5,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from tplink_admin import cli
-from tplink_admin import mcp
 from test_cli import FakeRouter
+
+from tplink_admin import cli, mcp
 
 
 def call_tool_with_fake_router(name, arguments=None):

@@ -15,9 +15,7 @@ import sys
 from collections.abc import Callable
 from typing import Any
 
-from . import __version__
-from . import cli
-
+from . import __version__, cli
 
 SERVER_NAME = "tplinkctl-mcp"
 PROTOCOL_VERSION = "2024-11-05"

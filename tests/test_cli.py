@@ -4,7 +4,6 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
 
 from tplink_admin import cli
@@ -391,13 +390,12 @@ class FakeRouter:
 
 def run_cli(argv):
     out = io.StringIO()
-    with tempfile.TemporaryDirectory() as tmp:
-        with (
-            contextlib.redirect_stdout(out),
-            patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp}, clear=False),
-            patch.object(cli, "build_router", return_value=FakeRouter()),
-        ):
-            cli.main(argv)
+    with (
+        tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(out),
+        patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp}, clear=False),
+        patch.object(cli, "build_router", return_value=FakeRouter()),
+    ):
+        cli.main(argv)
     return out.getvalue()
 
 
@@ -905,14 +903,13 @@ class CliTests(unittest.TestCase):
 
     def test_deep_doctor_runs_read_only_probes(self):
         out = io.StringIO()
-        with tempfile.TemporaryDirectory() as tmp:
-            with (
-                contextlib.redirect_stdout(out),
-                patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp}, clear=False),
-                patch.object(cli.requests, "get", return_value=FakeResponse()),
-                patch.object(cli, "build_router", return_value=FakeRouter()),
-            ):
-                cli.main(["--json", "--no-input", "doctor", "--deep"])
+        with (
+            tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(out),
+            patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp}, clear=False),
+            patch.object(cli.requests, "get", return_value=FakeResponse()),
+            patch.object(cli, "build_router", return_value=FakeRouter()),
+        ):
+            cli.main(["--json", "--no-input", "doctor", "--deep"])
         data = json.loads(out.getvalue())
         probe_ids = {probe["id"] for probe in data["probes"]}
         self.assertTrue(data["deep"])
