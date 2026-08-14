@@ -4,7 +4,7 @@
 [![Version](https://img.shields.io/badge/release-v0.5.0-blue.svg)](https://github.com/JithendraNara/tplinkctl/releases/tag/v0.5.0)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org/)
 [![CLI Spec](https://img.shields.io/badge/clispec-v0.2-emerald)](https://clispec.dev/)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 
 **Autonomous agent-ready CLI and stdio FastMCP server for local TP-Link router management.**
 
@@ -267,4 +267,4 @@ tplinkctl --json --no-input doctor --deep
 
 ## License
 
-MIT © [Jithendra Nara](https://github.com/JithendraNara)
+GNU GPLv3 or later © [Jithendra Nara](https://github.com/JithendraNara)
