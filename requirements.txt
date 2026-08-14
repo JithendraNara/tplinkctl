@@ -1,2 +1,2 @@
 requests>=2.33.1
-tplinkrouterc6u==5.19.0
+tplinkrouterc6u>=5.30.0

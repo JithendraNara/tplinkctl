@@ -33,6 +33,18 @@ try:
         TplinkRouterSG,
         VPN,
     )
+
+    if not getattr(TplinkRouterSG, "_tplinkctl_patched", False):
+        _orig_sg_request = TplinkRouterSG.request
+
+        def _safe_sg_request(self, path: str, data: str, ignore_response: bool = False, ignore_errors: bool = False):
+            if isinstance(data, str) and "=" in data and not data.strip().startswith("{"):
+                parsed = dict(parse_qsl(data))
+                data = json.dumps(parsed)
+            return _orig_sg_request(self, path, data, ignore_response=ignore_response, ignore_errors=ignore_errors)
+
+        TplinkRouterSG.request = _safe_sg_request  # type: ignore[method-assign]
+        TplinkRouterSG._tplinkctl_patched = True  # type: ignore[attr-defined]
 except ModuleNotFoundError as exc:
     print(
         "Missing dependency: tplinkrouterc6u. Run `python -m pip install -e .`.",
