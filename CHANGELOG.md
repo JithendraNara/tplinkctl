@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## v0.5.0 - 2026-08-14
+
 ### Added
 
 - `port-forward` command and `port_forward_list` MCP tool to list active NAT virtual servers / port forwarding rules.

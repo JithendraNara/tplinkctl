@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tplink-admin-cli"
-version = "0.4.1"
+version = "0.5.0"
 description = "Small CLI for managing a local TP-Link router admin page."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -13,6 +13,11 @@ dependencies = [
   "requests>=2.33.1",
   "tplinkrouterc6u==5.19.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/JithendraNara/tplinkctl"
+Changelog = "https://github.com/JithendraNara/tplinkctl/blob/main/CHANGELOG.md"
+Issues = "https://github.com/JithendraNara/tplinkctl/issues"
 
 [project.scripts]
 tplinkctl = "tplink_admin.cli:run"
