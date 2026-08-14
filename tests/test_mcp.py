@@ -47,6 +47,10 @@ class McpTests(unittest.TestCase):
         self.assertIn("ipv6_status", names)
         self.assertIn("mesh_devices", names)
         self.assertIn("wireguard_status", names)
+        self.assertIn("nat_status", names)
+        self.assertIn("qos_status", names)
+        self.assertIn("storage_status", names)
+        self.assertIn("time_status", names)
         self.assertIn("watch", names)
         self.assertIn("audit_tail", names)
         self.assertIn("state_snapshot", names)
@@ -189,6 +193,22 @@ class McpTests(unittest.TestCase):
         wg = call_tool_with_fake_router("wireguard_status")
         self.assertFalse(wg["isError"])
         self.assertTrue(json.loads(wg["content"][0]["text"])["enabled"])
+
+        nat = call_tool_with_fake_router("nat_status")
+        self.assertFalse(nat["isError"])
+        self.assertTrue(json.loads(nat["content"][0]["text"])["upnp"])
+
+        qos = call_tool_with_fake_router("qos_status")
+        self.assertFalse(qos["isError"])
+        self.assertTrue(json.loads(qos["content"][0]["text"])["enabled"])
+
+        storage = call_tool_with_fake_router("storage_status")
+        self.assertFalse(storage["isError"])
+        self.assertEqual(json.loads(storage["content"][0]["text"])["server_name"], "TP-Share")
+
+        time_res = call_tool_with_fake_router("time_status")
+        self.assertFalse(time_res["isError"])
+        self.assertEqual(json.loads(time_res["content"][0]["text"])["date"], "08/14/2026")
 
 
 if __name__ == "__main__":

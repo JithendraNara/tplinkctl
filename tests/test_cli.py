@@ -298,6 +298,46 @@ class FakeRouter:
                 "dns": True,
                 "private_key": "sDfwQQpn3mKGETYQTgUv+ZzEVPVbCJdDJtLnNvkyXHo=",
             }
+        if base_path == cli.NAT_ALG:
+            return {"sip": "on", "ipsec": "on", "pptp": "on", "ftp": "on"}
+        if base_path == cli.NAT_DMZ:
+            return {"enable": "off", "ipaddr": ""}
+        if base_path == cli.UPNP_SETTING:
+            return {"enable": "on"}
+        if base_path == cli.QOS_SETTING:
+            return {
+                "enable": "on",
+                "enable_app": "on",
+                "up_band": "1000",
+                "down_band": "1000",
+                "max_up_band": 1000,
+                "max_down_band": 1000,
+                "high": "90",
+                "middle": "30",
+                "low": "10",
+            }
+        if base_path == cli.DISK_METADATA:
+            return {"number": 0, "list": {}}
+        if base_path == cli.FOLDER_SHARING_SETTINGS:
+            return [
+                {"protocol": "samba", "enable": "on", "link": r"\\192.168.0.1", "port": "---"},
+                {"protocol": "ftp", "enable": "on", "link": "ftp://192.168.0.1:21", "port": 21},
+            ]
+        if base_path == cli.FOLDER_SHARING_SERVER:
+            return {"server": "TP-Share"}
+        if base_path == cli.TIME_MACHINE_SETTINGS:
+            return {"enable": "off", "capacity": 0, "free": 0, "limitsize": "0"}
+        if base_path == cli.TIME_SETTINGS:
+            return {
+                "date": "08/14/2026",
+                "time": "00:50:00",
+                "day": "Fri",
+                "timezone": "19",
+                "ntp_svr1": "us.pool.ntp.org",
+                "ntp_svr2": "north-america.pool.ntp.org",
+                "type": "auto",
+                "hour24_enable": "off",
+            }
         return {}
 
     def set_vpn_client_device(self, mac, enable):
@@ -902,6 +942,36 @@ class CliTests(unittest.TestCase):
         self.assertEqual(data["address"], "10.5.5.1/32")
         self.assertTrue(data["public_key"].startswith("agvcmR"))
         self.assertNotIn("private_key", data)
+
+    def test_nat_reports_upnp_dmz_and_alg(self):
+        output = run_cli(["--json", "--no-input", "nat"])
+        data = json.loads(output)
+        self.assertTrue(data["upnp"])
+        self.assertFalse(data["dmz"]["enabled"])
+        self.assertTrue(data["alg_passthrough"]["sip"])
+
+    def test_qos_reports_bandwidth_and_splits(self):
+        output = run_cli(["--json", "--no-input", "qos"])
+        data = json.loads(output)
+        self.assertTrue(data["enabled"])
+        self.assertEqual(data["up_bandwidth_mbps"], 1000.0)
+        self.assertEqual(data["down_bandwidth_mbps"], 1000.0)
+        self.assertEqual(data["priorities"]["high_percent"], 90.0)
+
+    def test_storage_reports_shares_and_time_machine(self):
+        output = run_cli(["--json", "--no-input", "storage"])
+        data = json.loads(output)
+        self.assertEqual(data["server_name"], "TP-Share")
+        self.assertEqual(len(data["shares"]), 2)
+        self.assertEqual(data["shares"][0]["protocol"], "samba")
+        self.assertFalse(data["time_machine"]["enabled"])
+
+    def test_time_reports_system_time_and_ntp(self):
+        output = run_cli(["--json", "--no-input", "time"])
+        data = json.loads(output)
+        self.assertEqual(data["date"], "08/14/2026")
+        self.assertIn("us.pool.ntp.org", data["ntp_servers"])
+        self.assertFalse(data["hour24_enabled"])
 
 
 if __name__ == "__main__":

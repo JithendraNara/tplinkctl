@@ -5,9 +5,13 @@
 ### Added
 
 - `port-forward` command and `port_forward_list` MCP tool to list active NAT virtual servers / port forwarding rules.
+- `nat` command and `nat_status` MCP tool to inspect NAT ALG passthroughs, DMZ, and UPnP enablement.
 - `ports` command and `port_speed` MCP tool to inspect physical Ethernet port link negotiation and supported speeds.
 - `ipv6` command and `ipv6_status` MCP tool to inspect dual-stack WAN/LAN IPv6 configurations (SLAAC, prefix delegation, gateway, DNS).
 - `mesh` command and `mesh_devices` MCP tool to list EasyMesh network topology, node roles, and client counts.
+- `qos` command and `qos_status` MCP tool to inspect Quality of Service (QoS) bandwidth limits and priority splits.
+- `storage` command and `storage_status` MCP tool to inspect USB storage disks, Samba/FTP sharing, and Time Machine status.
+- `time` command and `time_status` MCP tool to inspect router system date, time, timezone, and NTP configuration.
 - `wireguard` command and `wireguard_status` MCP tool to inspect WireGuard VPN server configuration and status while preserving public key availability and redacting sensitive keys.
 
 ### Changed

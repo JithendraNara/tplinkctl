@@ -51,6 +51,15 @@ DNS values (`1.1.1.1`, `8.8.8.8`) are currently observed from router status/DHCP
 | `/admin/network?form=lan_ipv6` | SG JSON request with `operation=read` | ✓ first-class `ipv6` works |
 | `/admin/easymesh_network?form=get_mesh_device_list_all` | SG JSON request with `operation=read` | ✓ first-class `mesh` works |
 | `/admin/wireguard?form=config` | SG JSON request with `operation=read` | ✓ first-class `wireguard` works |
+| `/admin/nat?form=alg` | SG JSON request with `operation=read` | ✓ first-class `nat` works |
+| `/admin/nat?form=dmz` | SG JSON request with `operation=read` | ✓ first-class `nat` works |
+| `/admin/upnp?form=enable` | SG JSON request with `operation=read` | ✓ first-class `nat` works |
+| `/admin/smart_network?form=qos` | SG JSON request with `operation=read` | ✓ first-class `qos` works |
+| `/admin/disk_setting?form=metadata` | SG JSON request with `operation=read` | ✓ first-class `storage` works |
+| `/admin/folder_sharing?form=settings` | SG JSON request with `operation=read` | ✓ first-class `storage` works |
+| `/admin/folder_sharing?form=server` | SG JSON request with `operation=read` | ✓ first-class `storage` works |
+| `/admin/time_machine?form=settings` | SG JSON request with `operation=read` | ✓ first-class `storage` works |
+| `/admin/time?form=settings` | SG JSON request with `operation=read` | ✓ first-class `time` works |
 | `/admin/lan?form=setting` | any | ✗ encrypted response (different cipher) |
 
 The `wan_fc` and LED discoveries are notable: the router requires `operation` in the URL path as well as the encrypted body. `tplinkctl read` now applies this placement automatically. For SG/BE-series mutation endpoints, the working pattern is to append payload keys into the URL and encrypt a JSON object body.

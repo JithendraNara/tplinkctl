@@ -18,9 +18,13 @@
 - Broad state snapshot: `tplinkctl --json --no-input snapshot`
 - Current status: `tplinkctl --json --no-input status`
 - Port forwarding rules: `tplinkctl --json --no-input port-forward`
+- NAT ALG, DMZ, UPnP status: `tplinkctl --json --no-input nat`
 - Port link negotiation: `tplinkctl --json --no-input ports`
 - IPv6 WAN/LAN status: `tplinkctl --json --no-input ipv6`
 - EasyMesh topology: `tplinkctl --json --no-input mesh`
+- Quality of Service (QoS): `tplinkctl --json --no-input qos`
+- USB Storage & Sharing: `tplinkctl --json --no-input storage`
+- Router System Time & NTP: `tplinkctl --json --no-input time`
 - WireGuard server state: `tplinkctl --json --no-input wireguard`
 - Connected devices: `tplinkctl --json --no-input devices --active`
 - Device detail: `tplinkctl --json --no-input device <hostname-or-ip-or-mac>`

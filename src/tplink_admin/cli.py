@@ -80,8 +80,10 @@ READ_COMMANDS = {
     "leases",
     "led",
     "mesh",
+    "nat",
     "port-forward",
     "ports",
+    "qos",
     "read",
     "reservations",
     "routes",
@@ -89,6 +91,8 @@ READ_COMMANDS = {
     "speed",
     "state",
     "status",
+    "storage",
+    "time",
     "tools",
     "wan",
     "watch",
@@ -114,7 +118,11 @@ READ_OPERATIONS = {
     "router.led.status",
     "network.ports",
     "nat.port_forward",
+    "nat.status",
     "mesh.topology",
+    "qos.status",
+    "storage.status",
+    "system.time",
     "wifi.status",
     "wifi.info",
     "vpn.status",
@@ -201,12 +209,21 @@ LED_SCHEDULE = "admin/ledpm?form=setting"
 FIRMWARE_LATEST = "admin/cloud_account?form=cloud_upgrade"
 FIRMWARE_AUTO_UPDATE = "admin/firmware?form=auto_upgrade"
 PORT_FORWARDING = "admin/nat?form=vs"
+NAT_ALG = "admin/nat?form=alg"
+NAT_DMZ = "admin/nat?form=dmz"
+UPNP_SETTING = "admin/upnp?form=enable"
 PORT_SPEED_CURRENT = "admin/network?form=port_speed_current"
 PORT_SPEED_SUPPORTED = "admin/network?form=port_speed_supported"
 NETWORK_STATUS_IPV6 = "admin/network?form=status_ipv6"
 NETWORK_LAN_IPV6 = "admin/network?form=lan_ipv6"
 EASYMESH_DEVICE_LIST = "admin/easymesh_network?form=get_mesh_device_list_all"
 WIREGUARD_CONFIG = "admin/wireguard?form=config"
+QOS_SETTING = "admin/smart_network?form=qos"
+DISK_METADATA = "admin/disk_setting?form=metadata"
+FOLDER_SHARING_SETTINGS = "admin/folder_sharing?form=settings"
+FOLDER_SHARING_SERVER = "admin/folder_sharing?form=server"
+TIME_MACHINE_SETTINGS = "admin/time_machine?form=settings"
+TIME_SETTINGS = "admin/time?form=settings"
 KNOWN_QUIRKS = [
     {
         "id": "sg-operation-placement",
@@ -252,7 +269,11 @@ CAPABILITIES = [
     {"id": "internet.speedtest", "command": "speedtest", "type": "external_network_test", "requires_auth": False, "output": ["json", "plain"], "status": "supported"},
     {"id": "network.ports", "command": "ports", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "live_verified"},
     {"id": "nat.port_forward", "command": "port-forward", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "live_verified"},
+    {"id": "nat.status", "command": "nat", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "live_verified"},
     {"id": "mesh.topology", "command": "mesh", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "live_verified"},
+    {"id": "qos.status", "command": "qos", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "live_verified"},
+    {"id": "storage.status", "command": "storage", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "live_verified"},
+    {"id": "system.time", "command": "time", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "live_verified"},
     {"id": "wifi.status", "command": "wifi-status", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
     {"id": "wifi.info", "command": "wifi-info", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
     {"id": "wifi.toggle", "command": "wifi <connection> <on|off>", "type": "mutation", "requires_auth": True, "requires_confirmation": False, "risk": "network_outage", "rollback": "Run the opposite wifi command.", "status": "supported"},
@@ -1523,6 +1544,34 @@ def tool_manifest() -> dict[str, Any]:
             "read_only": True,
             "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
         },
+        {
+            "name": "nat_status",
+            "description": "Show NAT ALG passthrough rules, DMZ status, and UPnP enablement.",
+            "command": ["tplinkctl", "--json", "--no-input", "nat"],
+            "read_only": True,
+            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+        {
+            "name": "qos_status",
+            "description": "Show Quality of Service (QoS) enablement, bandwidth limits, and priority splits.",
+            "command": ["tplinkctl", "--json", "--no-input", "qos"],
+            "read_only": True,
+            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+        {
+            "name": "storage_status",
+            "description": "Show attached USB storage disks, Samba/FTP folder sharing, and Apple Time Machine status.",
+            "command": ["tplinkctl", "--json", "--no-input", "storage"],
+            "read_only": True,
+            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+        {
+            "name": "time_status",
+            "description": "Show router system date, time, timezone, and NTP server configuration.",
+            "command": ["tplinkctl", "--json", "--no-input", "time"],
+            "read_only": True,
+            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
     ]
     return {
         "name": "tplinkctl-tools",
@@ -2661,6 +2710,106 @@ def cmd_wireguard(args: argparse.Namespace) -> None:
     emit(args, with_session(args, wireguard_summary))
 
 
+def nat_summary(router) -> dict[str, Any]:
+    alg_raw = to_plain(api_request(router, operation_path(NAT_ALG, "read"), "operation=read"))
+    dmz_raw = to_plain(api_request(router, operation_path(NAT_DMZ, "read"), "operation=read"))
+    upnp_raw = to_plain(api_request(router, operation_path(UPNP_SETTING, "read"), "operation=read"))
+    alg = {k: is_on(v) for k, v in alg_raw.items()} if isinstance(alg_raw, dict) else {}
+    dmz = dmz_raw if isinstance(dmz_raw, dict) else {}
+    upnp = upnp_raw if isinstance(upnp_raw, dict) else {}
+    return {
+        "upnp": is_on(upnp.get("enable")),
+        "dmz": {
+            "enabled": is_on(dmz.get("enable")),
+            "ipaddr": dmz.get("ipaddr", ""),
+        },
+        "alg_passthrough": alg,
+    }
+
+
+def cmd_nat(args: argparse.Namespace) -> None:
+    emit(args, with_session(args, nat_summary))
+
+
+def qos_summary(router) -> dict[str, Any]:
+    raw = to_plain(api_request(router, operation_path(QOS_SETTING, "read"), "operation=read"))
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        "enabled": is_on(raw.get("enable")),
+        "app_qos_enabled": is_on(raw.get("enable_app")),
+        "up_bandwidth_mbps": number_or_zero(raw.get("up_band")),
+        "down_bandwidth_mbps": number_or_zero(raw.get("down_band")),
+        "max_up_bandwidth_mbps": number_or_zero(raw.get("max_up_band")),
+        "max_down_bandwidth_mbps": number_or_zero(raw.get("max_down_band")),
+        "priorities": {
+            "high_percent": number_or_zero(raw.get("high")),
+            "middle_percent": number_or_zero(raw.get("middle")),
+            "low_percent": number_or_zero(raw.get("low")),
+        },
+    }
+
+
+def cmd_qos(args: argparse.Namespace) -> None:
+    emit(args, with_session(args, qos_summary))
+
+
+def storage_summary(router) -> dict[str, Any]:
+    disks_raw = to_plain(api_request(router, operation_path(DISK_METADATA, "read"), "operation=read"))
+    shares_raw = to_plain(api_request(router, operation_path(FOLDER_SHARING_SETTINGS, "read"), "operation=read"))
+    srv_raw = to_plain(api_request(router, operation_path(FOLDER_SHARING_SERVER, "read"), "operation=read"))
+    tm_raw = to_plain(api_request(router, operation_path(TIME_MACHINE_SETTINGS, "read"), "operation=read"))
+    srv = srv_raw if isinstance(srv_raw, dict) else {}
+    tm = tm_raw if isinstance(tm_raw, dict) else {}
+    disks = disks_raw if isinstance(disks_raw, dict) else {}
+    shares = shares_raw if isinstance(shares_raw, list) else ([shares_raw] if isinstance(shares_raw, dict) else [])
+    return {
+        "server_name": srv.get("server", "TP-Share"),
+        "disks_count": disks.get("number", 0),
+        "disks": disks.get("list", {}),
+        "shares": [
+            {
+                "protocol": s.get("protocol"),
+                "enabled": is_on(s.get("enable")),
+                "link": s.get("link"),
+                "port": s.get("port"),
+            }
+            for s in shares
+            if isinstance(s, dict)
+        ],
+        "time_machine": {
+            "enabled": is_on(tm.get("enable")),
+            "capacity": number_or_zero(tm.get("capacity")),
+            "free": number_or_zero(tm.get("free")),
+            "limitsize": tm.get("limitsize"),
+        },
+    }
+
+
+def cmd_storage(args: argparse.Namespace) -> None:
+    emit(args, with_session(args, storage_summary))
+
+
+def time_summary(router) -> dict[str, Any]:
+    raw = to_plain(api_request(router, operation_path(TIME_SETTINGS, "read"), "operation=read"))
+    if not isinstance(raw, dict):
+        return {}
+    ntp_servers = [raw[k] for k in ["ntp_svr1", "ntp_svr2"] if raw.get(k)]
+    return {
+        "date": raw.get("date"),
+        "time": raw.get("time"),
+        "day": raw.get("day"),
+        "timezone": raw.get("timezone"),
+        "ntp_servers": ntp_servers,
+        "type": raw.get("type"),
+        "hour24_enabled": is_on(raw.get("hour24_enable")),
+    }
+
+
+def cmd_time(args: argparse.Namespace) -> None:
+    emit(args, with_session(args, time_summary))
+
+
 def cmd_reboot(args: argparse.Namespace) -> None:
     if not args.yes and not args.force:
         raise SystemExit("Refusing to reboot without --yes.")
@@ -3038,8 +3187,12 @@ def add_simple_commands(subparsers: argparse._SubParsersAction[argparse.Argument
         "leases": (cmd_leases, "list DHCP leases"),
         "reservations": (cmd_reservations, "list IPv4 DHCP reservations"),
         "port-forward": (cmd_port_forward, "list NAT virtual servers / port forwarding rules"),
+        "nat": (cmd_nat, "show NAT ALG, DMZ, and UPnP status"),
         "ports": (cmd_ports, "show physical Ethernet port link speed and capabilities"),
         "mesh": (cmd_mesh, "list EasyMesh topology and mesh nodes"),
+        "qos": (cmd_qos, "show Quality of Service bandwidth limits and priority splits"),
+        "storage": (cmd_storage, "show USB storage, Samba/FTP sharing, and Time Machine status"),
+        "time": (cmd_time, "show router system date, time, timezone, and NTP configuration"),
         "wireguard": (cmd_wireguard, "show WireGuard VPN server configuration and status"),
         "vpn-status": (cmd_vpn_status, "show VPN server status"),
         "vpn-client-status": (cmd_vpn_client_status, "show VPN client status"),

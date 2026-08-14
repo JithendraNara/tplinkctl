@@ -231,6 +231,22 @@ def argv_wireguard_status(_: dict[str, Any]) -> list[str]:
     return base_argv() + ["wireguard"]
 
 
+def argv_nat(_: dict[str, Any]) -> list[str]:
+    return base_argv() + ["nat"]
+
+
+def argv_qos(_: dict[str, Any]) -> list[str]:
+    return base_argv() + ["qos"]
+
+
+def argv_storage(_: dict[str, Any]) -> list[str]:
+    return base_argv() + ["storage"]
+
+
+def argv_time(_: dict[str, Any]) -> list[str]:
+    return base_argv() + ["time"]
+
+
 TOOL_BUILDERS: dict[str, Callable[[dict[str, Any]], list[str]]] = {
     "router_status": argv_status,
     "firmware_audit": argv_firmware_audit,
@@ -249,6 +265,10 @@ TOOL_BUILDERS: dict[str, Callable[[dict[str, Any]], list[str]]] = {
     "ipv6_status": argv_ipv6_status,
     "mesh_devices": argv_mesh_devices,
     "wireguard_status": argv_wireguard_status,
+    "nat_status": argv_nat,
+    "qos_status": argv_qos,
+    "storage_status": argv_storage,
+    "time_status": argv_time,
     "doctor_deep": argv_doctor_deep,
     "watch": argv_watch,
     "audit_tail": argv_audit_tail,
