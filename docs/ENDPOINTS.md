@@ -60,6 +60,16 @@ DNS values (`1.1.1.1`, `8.8.8.8`) are currently observed from router status/DHCP
 | `/admin/folder_sharing?form=server` | SG JSON request with `operation=read` | ✓ first-class `storage` works |
 | `/admin/time_machine?form=settings` | SG JSON request with `operation=read` | ✓ first-class `storage` works |
 | `/admin/time?form=settings` | SG JSON request with `operation=read` | ✓ first-class `time` works |
+| `/admin/wireless?form=ofdma` | SG JSON request with `operation=read` | ✓ first-class `wifi-advanced` works |
+| `/admin/wireless?form=ofdma_mimo` | SG JSON request with `operation=read` | ✓ first-class `wifi-advanced` works |
+| `/admin/wireless?form=twt` | SG JSON request with `operation=read` | ✓ first-class `wifi-advanced` works |
+| `/admin/wireless?form=wireless_addition_setting` | SG JSON request with `operation=read` | ✓ first-class `wifi-advanced` works |
+| `/admin/wireless_schedule_v2?form=settings` | SG JSON request with `operation=read` | ✓ first-class `wifi-advanced` works |
+| `/admin/wireless?form=channelExtraInfo_5g` | SG JSON request with `operation=read` | ✓ first-class `wifi-advanced` works |
+| `/admin/wireless?form=region` | SG JSON request with `operation=read` | ✓ first-class `wifi-advanced` works |
+| `/admin/ddns?form=provider` | SG JSON request with `operation=read` | ✓ first-class `ddns` works |
+| `/admin/iptv?form=setting` | SG JSON request with `operation=read` | ✓ first-class `iptv` works |
+| `/admin/eco_mode_v2?form=settings` | SG JSON request with `operation=read` | ✓ first-class `power` works |
 | `/admin/lan?form=setting` | any | ✗ encrypted response (different cipher) |
 
 The `wan_fc` and LED discoveries are notable: the router requires `operation` in the URL path as well as the encrypted body. `tplinkctl read` now applies this placement automatically. For SG/BE-series mutation endpoints, the working pattern is to append payload keys into the URL and encrypt a JSON object body.

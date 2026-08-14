@@ -209,7 +209,7 @@ class FakeRouter:
                 self.vpn_access = "on" if enabled else "off"
                 self.vpn_devices.append(("48-BA-4E-40-B4-F4", enabled))
                 return None if kwargs.get("ignore_response") else {}
-        if path == "admin/wireless?form=smart_connect":
+        if base_path == "admin/wireless?form=smart_connect":
             return {"smart_enable": "on"}
         if "wireless_2g" in path or "wireless_5g" in path:
             if "operation=write" in data or "operation=write" in path:
@@ -338,6 +338,51 @@ class FakeRouter:
                 "type": "auto",
                 "hour24_enable": "off",
             }
+        if base_path == cli.WIRELESS_OFDMA:
+            return {"enable": "off"}
+        if base_path == cli.WIRELESS_OFDMA_MIMO:
+            return {"setting": "all"}
+        if base_path == cli.WIRELESS_TWT:
+            return {"enable": "off"}
+        if base_path == cli.WIRELESS_ADDITION:
+            return {
+                "zerowait_dfs": "on",
+                "wmm": "on",
+                "shortgi": "on",
+                "beacon_int": "100",
+                "rts": "2346",
+                "frag": "2346",
+                "isolate": "off",
+                "mscs_enable": "on",
+            }
+        if base_path == cli.WIRELESS_SCHEDULE_V2:
+            return {"enable": False, "max_rules": 20, "list": {}}
+        if base_path == cli.WIRELESS_CHANNEL_EXTRA_5G:
+            return [
+                {"channelWidth": 20, "channelList": []},
+                {"channelWidth": 160, "channelList": ["132", "136", "140", "144"]},
+            ]
+        if base_path == cli.WIRELESS_REGION:
+            return {"country": "US"}
+        if base_path == cli.DDNS_PROVIDER:
+            return {"provider": "tp-link"}
+        if base_path == cli.IPTV_SETTING:
+            return {
+                "enable": "off",
+                "mode": "Bridge",
+                "igmp_snooping_enable": "on",
+                "igmp_version": "2",
+                "mcwifi_enable": "on",
+                "iptv_enable": "on",
+                "ipphone_enable": "on",
+                "support_mode_list": ["Bridge", "Custom"],
+                "port_settings": [
+                    {"name": "lan1", "type": "Internet"},
+                    {"name": "lan3", "type": "IPTV"},
+                ],
+            }
+        if base_path == cli.ECO_MODE_SETTINGS:
+            return {"enable": False, "power_mode": "balanced", "smart_eco": True, "schedule_mode": "always"}
         return {}
 
     def set_vpn_client_device(self, mac, enable):
@@ -972,6 +1017,40 @@ class CliTests(unittest.TestCase):
         self.assertEqual(data["date"], "08/14/2026")
         self.assertIn("us.pool.ntp.org", data["ntp_servers"])
         self.assertFalse(data["hour24_enabled"])
+
+    def test_wifi_advanced_reports_radio_features(self):
+        output = run_cli(["--json", "--no-input", "wifi-advanced"])
+        data = json.loads(output)
+        self.assertTrue(data["smart_connect"])
+        self.assertFalse(data["ofdma"])
+        self.assertFalse(data["twt"])
+        self.assertEqual(data["ofdma_mimo_setting"], "all")
+        self.assertTrue(data["radio"]["zerowait_dfs"])
+        self.assertEqual(data["radio"]["beacon_interval"], "100")
+        self.assertEqual(data["country"], "US")
+        widths = {item["width_mhz"] for item in data["channels_5g"]}
+        self.assertIn(160, widths)
+
+    def test_ddns_reports_provider(self):
+        output = run_cli(["--json", "--no-input", "ddns"])
+        data = json.loads(output)
+        self.assertEqual(data["provider"], "tp-link")
+
+    def test_iptv_reports_vlan_and_ports(self):
+        output = run_cli(["--json", "--no-input", "iptv"])
+        data = json.loads(output)
+        self.assertFalse(data["enabled"])
+        self.assertEqual(data["mode"], "Bridge")
+        self.assertTrue(data["igmp_snooping"])
+        port_types = {p["port"]: p["type"] for p in data["port_settings"]}
+        self.assertEqual(port_types["lan3"], "IPTV")
+
+    def test_power_reports_eco_mode(self):
+        output = run_cli(["--json", "--no-input", "power"])
+        data = json.loads(output)
+        self.assertFalse(data["eco_enabled"])
+        self.assertEqual(data["power_mode"], "balanced")
+        self.assertTrue(data["smart_eco"])
 
 
 if __name__ == "__main__":

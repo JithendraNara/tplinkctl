@@ -247,6 +247,22 @@ def argv_time(_: dict[str, Any]) -> list[str]:
     return base_argv() + ["time"]
 
 
+def argv_power(_: dict[str, Any]) -> list[str]:
+    return base_argv() + ["power"]
+
+
+def argv_wifi_advanced(_: dict[str, Any]) -> list[str]:
+    return base_argv() + ["wifi-advanced"]
+
+
+def argv_ddns(_: dict[str, Any]) -> list[str]:
+    return base_argv() + ["ddns"]
+
+
+def argv_iptv(_: dict[str, Any]) -> list[str]:
+    return base_argv() + ["iptv"]
+
+
 TOOL_BUILDERS: dict[str, Callable[[dict[str, Any]], list[str]]] = {
     "router_status": argv_status,
     "firmware_audit": argv_firmware_audit,
@@ -269,6 +285,10 @@ TOOL_BUILDERS: dict[str, Callable[[dict[str, Any]], list[str]]] = {
     "qos_status": argv_qos,
     "storage_status": argv_storage,
     "time_status": argv_time,
+    "power_status": argv_power,
+    "wifi_advanced": argv_wifi_advanced,
+    "ddns_status": argv_ddns,
+    "iptv_status": argv_iptv,
     "doctor_deep": argv_doctor_deep,
     "watch": argv_watch,
     "audit_tail": argv_audit_tail,

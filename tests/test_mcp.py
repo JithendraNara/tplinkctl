@@ -51,6 +51,10 @@ class McpTests(unittest.TestCase):
         self.assertIn("qos_status", names)
         self.assertIn("storage_status", names)
         self.assertIn("time_status", names)
+        self.assertIn("power_status", names)
+        self.assertIn("wifi_advanced", names)
+        self.assertIn("ddns_status", names)
+        self.assertIn("iptv_status", names)
         self.assertIn("watch", names)
         self.assertIn("audit_tail", names)
         self.assertIn("state_snapshot", names)
@@ -209,6 +213,22 @@ class McpTests(unittest.TestCase):
         time_res = call_tool_with_fake_router("time_status")
         self.assertFalse(time_res["isError"])
         self.assertEqual(json.loads(time_res["content"][0]["text"])["date"], "08/14/2026")
+
+        power = call_tool_with_fake_router("power_status")
+        self.assertFalse(power["isError"])
+        self.assertEqual(json.loads(power["content"][0]["text"])["power_mode"], "balanced")
+
+        wadv = call_tool_with_fake_router("wifi_advanced")
+        self.assertFalse(wadv["isError"])
+        self.assertTrue(json.loads(wadv["content"][0]["text"])["smart_connect"])
+
+        ddns = call_tool_with_fake_router("ddns_status")
+        self.assertFalse(ddns["isError"])
+        self.assertEqual(json.loads(ddns["content"][0]["text"])["provider"], "tp-link")
+
+        iptv = call_tool_with_fake_router("iptv_status")
+        self.assertFalse(iptv["isError"])
+        self.assertEqual(json.loads(iptv["content"][0]["text"])["mode"], "Bridge")
 
 
 if __name__ == "__main__":

@@ -25,6 +25,10 @@
 - Quality of Service (QoS): `tplinkctl --json --no-input qos`
 - USB Storage & Sharing: `tplinkctl --json --no-input storage`
 - Router System Time & NTP: `tplinkctl --json --no-input time`
+- Eco / power mode: `tplinkctl --json --no-input power`
+- Advanced Wi-Fi radios (OFDMA, TWT, DFS channels): `tplinkctl --json --no-input wifi-advanced`
+- Dynamic DNS provider: `tplinkctl --json --no-input ddns`
+- IPTV / VLAN / IGMP: `tplinkctl --json --no-input iptv`
 - WireGuard server state: `tplinkctl --json --no-input wireguard`
 - Connected devices: `tplinkctl --json --no-input devices --active`
 - Device detail: `tplinkctl --json --no-input device <hostname-or-ip-or-mac>`

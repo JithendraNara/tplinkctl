@@ -12,6 +12,10 @@
 - `qos` command and `qos_status` MCP tool to inspect Quality of Service (QoS) bandwidth limits and priority splits.
 - `storage` command and `storage_status` MCP tool to inspect USB storage disks, Samba/FTP sharing, and Time Machine status.
 - `time` command and `time_status` MCP tool to inspect router system date, time, timezone, and NTP configuration.
+- `power` command and `power_status` MCP tool to inspect eco mode, power profile, and smart power-saving state.
+- `wifi-advanced` command and `wifi_advanced` MCP tool to inspect OFDMA, OFDMA MIMO, TWT, Smart Connect, DFS channel availability, radio schedule, and region.
+- `ddns` command and `ddns_status` MCP tool to inspect the configured dynamic DNS provider.
+- `iptv` command and `iptv_status` MCP tool to inspect IPTV/VLAN mode, IGMP snooping, and LAN port assignments.
 - `wireguard` command and `wireguard_status` MCP tool to inspect WireGuard VPN server configuration and status while preserving public key availability and redacting sensitive keys.
 
 ### Changed

@@ -83,6 +83,7 @@ READ_COMMANDS = {
     "nat",
     "port-forward",
     "ports",
+    "power",
     "qos",
     "read",
     "reservations",
@@ -96,10 +97,13 @@ READ_COMMANDS = {
     "tools",
     "wan",
     "watch",
+    "wifi-advanced",
     "wifi-config",
     "wifi-info",
     "wifi-status",
     "wireguard",
+    "ddns",
+    "iptv",
     "vpn-client-status",
     "vpn-status",
 }
@@ -123,6 +127,10 @@ READ_OPERATIONS = {
     "qos.status",
     "storage.status",
     "system.time",
+    "system.power",
+    "wifi.advanced",
+    "network.ddns",
+    "network.iptv",
     "wifi.status",
     "wifi.info",
     "vpn.status",
@@ -224,6 +232,16 @@ FOLDER_SHARING_SETTINGS = "admin/folder_sharing?form=settings"
 FOLDER_SHARING_SERVER = "admin/folder_sharing?form=server"
 TIME_MACHINE_SETTINGS = "admin/time_machine?form=settings"
 TIME_SETTINGS = "admin/time?form=settings"
+WIRELESS_OFDMA = "admin/wireless?form=ofdma"
+WIRELESS_OFDMA_MIMO = "admin/wireless?form=ofdma_mimo"
+WIRELESS_TWT = "admin/wireless?form=twt"
+WIRELESS_ADDITION = "admin/wireless?form=wireless_addition_setting"
+WIRELESS_SCHEDULE_V2 = "admin/wireless_schedule_v2?form=settings"
+WIRELESS_CHANNEL_EXTRA_5G = "admin/wireless?form=channelExtraInfo_5g"
+WIRELESS_REGION = "admin/wireless?form=region"
+DDNS_PROVIDER = "admin/ddns?form=provider"
+IPTV_SETTING = "admin/iptv?form=setting"
+ECO_MODE_SETTINGS = "admin/eco_mode_v2?form=settings"
 KNOWN_QUIRKS = [
     {
         "id": "sg-operation-placement",
@@ -274,6 +292,10 @@ CAPABILITIES = [
     {"id": "qos.status", "command": "qos", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "live_verified"},
     {"id": "storage.status", "command": "storage", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "live_verified"},
     {"id": "system.time", "command": "time", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "live_verified"},
+    {"id": "system.power", "command": "power", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "live_verified"},
+    {"id": "wifi.advanced", "command": "wifi-advanced", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "live_verified"},
+    {"id": "network.ddns", "command": "ddns", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "live_verified"},
+    {"id": "network.iptv", "command": "iptv", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "live_verified"},
     {"id": "wifi.status", "command": "wifi-status", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
     {"id": "wifi.info", "command": "wifi-info", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
     {"id": "wifi.toggle", "command": "wifi <connection> <on|off>", "type": "mutation", "requires_auth": True, "requires_confirmation": False, "risk": "network_outage", "rollback": "Run the opposite wifi command.", "status": "supported"},
@@ -1572,6 +1594,34 @@ def tool_manifest() -> dict[str, Any]:
             "read_only": True,
             "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
         },
+        {
+            "name": "power_status",
+            "description": "Show router eco/power mode, smart eco state, and scheduled power-saving rules.",
+            "command": ["tplinkctl", "--json", "--no-input", "power"],
+            "read_only": True,
+            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+        {
+            "name": "wifi_advanced",
+            "description": "Show advanced Wi-Fi radio features: OFDMA, OFDMA MIMO, TWT, Smart Connect, DFS channels, radio schedule, and region.",
+            "command": ["tplinkctl", "--json", "--no-input", "wifi-advanced"],
+            "read_only": True,
+            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+        {
+            "name": "ddns_status",
+            "description": "Show the configured dynamic DNS provider.",
+            "command": ["tplinkctl", "--json", "--no-input", "ddns"],
+            "read_only": True,
+            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+        {
+            "name": "iptv_status",
+            "description": "Show IPTV/VLAN configuration, IGMP snooping, and LAN port assignments.",
+            "command": ["tplinkctl", "--json", "--no-input", "iptv"],
+            "read_only": True,
+            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
     ]
     return {
         "name": "tplinkctl-tools",
@@ -2810,6 +2860,113 @@ def cmd_time(args: argparse.Namespace) -> None:
     emit(args, with_session(args, time_summary))
 
 
+def read_form(router, endpoint: str) -> Any:
+    return to_plain(api_request(router, operation_path(endpoint, "read"), "operation=read"))
+
+
+def wifi_advanced_summary(router) -> dict[str, Any]:
+    ofdma = read_form(router, WIRELESS_OFDMA)
+    ofdma_mimo = read_form(router, WIRELESS_OFDMA_MIMO)
+    twt = read_form(router, WIRELESS_TWT)
+    smart = read_form(router, WIFI_ENDPOINTS["smart_connect"][0])
+    addition = read_form(router, WIRELESS_ADDITION)
+    schedule = read_form(router, WIRELESS_SCHEDULE_V2)
+    channels_5g = read_form(router, WIRELESS_CHANNEL_EXTRA_5G)
+    region = read_form(router, WIRELESS_REGION)
+    ofdma = ofdma if isinstance(ofdma, dict) else {}
+    ofdma_mimo = ofdma_mimo if isinstance(ofdma_mimo, dict) else {}
+    twt = twt if isinstance(twt, dict) else {}
+    smart = smart if isinstance(smart, dict) else {}
+    addition = addition if isinstance(addition, dict) else {}
+    schedule = schedule if isinstance(schedule, dict) else {}
+    channels_5g = channels_5g if isinstance(channels_5g, list) else []
+    region = region if isinstance(region, dict) else {}
+    return {
+        "smart_connect": is_on(smart.get("smart_enable")),
+        "ofdma": is_on(ofdma.get("enable")),
+        "ofdma_mimo_setting": ofdma_mimo.get("setting"),
+        "twt": is_on(twt.get("enable")),
+        "schedule": {
+            "enabled": bool(schedule.get("enable")),
+            "max_rules": schedule.get("max_rules"),
+        },
+        "radio": {
+            "zerowait_dfs": is_on(addition.get("zerowait_dfs")),
+            "wmm": is_on(addition.get("wmm")),
+            "shortgi": is_on(addition.get("shortgi")),
+            "beacon_interval": addition.get("beacon_int"),
+            "rts_threshold": addition.get("rts"),
+            "fragmentation_threshold": addition.get("frag"),
+            "client_isolation": is_on(addition.get("isolate")),
+            "mscs": is_on(addition.get("mscs_enable")),
+        },
+        "channels_5g": [
+            {"width_mhz": item.get("channelWidth"), "channels": item.get("channelList", [])}
+            for item in channels_5g
+            if isinstance(item, dict)
+        ],
+        "country": region.get("country"),
+    }
+
+
+def cmd_wifi_advanced(args: argparse.Namespace) -> None:
+    emit(args, with_session(args, wifi_advanced_summary))
+
+
+def ddns_summary(router) -> dict[str, Any]:
+    provider = read_form(router, DDNS_PROVIDER)
+    provider = provider if isinstance(provider, dict) else {}
+    return {"provider": provider.get("provider")}
+
+
+def cmd_ddns(args: argparse.Namespace) -> None:
+    emit(args, with_session(args, ddns_summary))
+
+
+def iptv_summary(router) -> dict[str, Any]:
+    raw = read_form(router, IPTV_SETTING)
+    raw = raw if isinstance(raw, dict) else {}
+    ports = raw.get("port_settings")
+    if isinstance(ports, dict):
+        ports = list(ports.values())
+    if not isinstance(ports, list):
+        ports = []
+    return {
+        "enabled": is_on(raw.get("enable")),
+        "mode": raw.get("mode"),
+        "igmp_snooping": is_on(raw.get("igmp_snooping_enable")),
+        "igmp_version": raw.get("igmp_version"),
+        "multicast_wifi": is_on(raw.get("mcwifi_enable")),
+        "iptv_enable": is_on(raw.get("iptv_enable")),
+        "ipphone_enable": is_on(raw.get("ipphone_enable")),
+        "supported_modes": raw.get("support_mode_list") or [],
+        "port_settings": [
+            {"port": p.get("name"), "type": p.get("type")}
+            for p in ports
+            if isinstance(p, dict)
+        ],
+    }
+
+
+def cmd_iptv(args: argparse.Namespace) -> None:
+    emit(args, with_session(args, iptv_summary))
+
+
+def power_summary(router) -> dict[str, Any]:
+    raw = read_form(router, ECO_MODE_SETTINGS)
+    raw = raw if isinstance(raw, dict) else {}
+    return {
+        "eco_enabled": bool(raw.get("enable")),
+        "power_mode": raw.get("power_mode"),
+        "smart_eco": bool(raw.get("smart_eco")),
+        "schedule_mode": raw.get("schedule_mode"),
+    }
+
+
+def cmd_power(args: argparse.Namespace) -> None:
+    emit(args, with_session(args, power_summary))
+
+
 def cmd_reboot(args: argparse.Namespace) -> None:
     if not args.yes and not args.force:
         raise SystemExit("Refusing to reboot without --yes.")
@@ -3194,6 +3351,10 @@ def add_simple_commands(subparsers: argparse._SubParsersAction[argparse.Argument
         "storage": (cmd_storage, "show USB storage, Samba/FTP sharing, and Time Machine status"),
         "time": (cmd_time, "show router system date, time, timezone, and NTP configuration"),
         "wireguard": (cmd_wireguard, "show WireGuard VPN server configuration and status"),
+        "wifi-advanced": (cmd_wifi_advanced, "show advanced Wi-Fi features (OFDMA, TWT, DFS channels, schedule)"),
+        "ddns": (cmd_ddns, "show dynamic DNS provider configuration"),
+        "iptv": (cmd_iptv, "show IPTV/VLAN, IGMP, and LAN port assignment"),
+        "power": (cmd_power, "show eco/power mode and power-saving schedule"),
         "vpn-status": (cmd_vpn_status, "show VPN server status"),
         "vpn-client-status": (cmd_vpn_client_status, "show VPN client status"),
     }
