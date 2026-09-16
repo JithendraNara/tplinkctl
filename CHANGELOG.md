@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## v0.5.3 - 2026-09-16
+
+### Fixed
+
+- 15 read commands (`firmware-check`, `ipv6`, `mesh`, `nat`, `port-forward`, `ports`, `power`, `qos`, `ddns`, `iptv`, `storage`, `time`, `wifi-advanced`, `schema`, `speedtest`) were blocked by any profile because `operation_id()` had no mapping for them; all now resolve to their allowlisted operation ids. Added genuinely-read-only `internet.speedtest` to `READ_OPERATIONS`.
+- Test harness now scrubs `TPLINK_PROFILE` / `TPLINK_MCP_PROFILE` so developer shell exports can't break the suite (91/91 green with or without them set).
+
 ## v0.5.2 - 2026-09-16
 
 ### Fixed
