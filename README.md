@@ -1,7 +1,7 @@
 # tplinkctl
 
 [![CI](https://github.com/JithendraNara/tplinkctl/actions/workflows/ci.yml/badge.svg)](https://github.com/JithendraNara/tplinkctl/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/release-v0.5.1-blue.svg)](https://github.com/JithendraNara/tplinkctl/releases/tag/v0.5.1)
+[![Version](https://img.shields.io/badge/release-v0.5.2-blue.svg)](https://github.com/JithendraNara/tplinkctl/releases/tag/v0.5.2)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org/)
 [![CLI Spec](https://img.shields.io/badge/clispec-v0.2-emerald)](https://clispec.dev/)
 [![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)

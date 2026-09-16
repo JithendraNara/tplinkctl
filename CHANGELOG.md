@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## v0.5.2 - 2026-09-16
+
+### Fixed
+
+- `reservations` no longer crashes with a raw traceback when the router answers `{"list": {}}` (BE3500 firmware 1.3.3 with no DHCP reservations); the command normalizes the payload locally and returns `[]`.
+- Bare `tplinkctl device access` (no state arg) now shows access-control status instead of `No device matched 'access'`; `access_state` defaults to `status`.
+
+### Changed
+
+- README version badge and release link bumped to `v0.5.1`; install leads with `pip install tplink-admin-cli` and notes the PyPI name differs from the GitHub project name; FastMCP wording replaced with stdio JSON-RPC MCP server with no MCP SDK dependency.
+
 ## v0.5.1 - 2026-08-14
 
 ### Changed
