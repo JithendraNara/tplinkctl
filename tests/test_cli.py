@@ -388,11 +388,19 @@ class FakeRouter:
         self.vpn_devices.append((mac, enable))
 
 
+# Profile env vars must never leak into tests: developers commonly export
+# TPLINK_PROFILE / TPLINK_MCP_PROFILE in their shell, and ensure_command_allowed
+# reads them via os.getenv. Empty string is falsy, and the CLI treats falsy as
+# unset (getattr(...) or os.getenv(...)), so pinning both to "" keeps the suite
+# hermetic regardless of the developer's shell.
+PROFILE_SCRUB = {"TPLINK_PROFILE": "", "TPLINK_MCP_PROFILE": ""}
+
+
 def run_cli(argv):
     out = io.StringIO()
     with (
         tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(out),
-        patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp}, clear=False),
+        patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp, **PROFILE_SCRUB}, clear=False),
         patch.object(cli, "build_router", return_value=FakeRouter()),
     ):
         cli.main(argv)
@@ -403,7 +411,7 @@ def run_cli_in_config(tmp, argv, router=None):
     out = io.StringIO()
     with (
         contextlib.redirect_stdout(out),
-        patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp}, clear=False),
+        patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp, **PROFILE_SCRUB}, clear=False),
         patch.object(cli, "build_router", return_value=router or FakeRouter()),
     ):
         cli.main(argv)
@@ -438,6 +446,39 @@ class CliTests(unittest.TestCase):
         data = json.loads(output)
         self.assertFalse(data["ok"])
         self.assertIn("private", data["warnings"][0])
+
+    def test_operation_ids_cover_read_surface(self):
+        # Every read command must map to its allowlisted operation id;
+        # unmapped commands fall through to the raw command string and get
+        # blocked by any profile (firmware-check, ipv6, mesh, ...).
+        import argparse
+
+        expected = {
+            "firmware-check": "router.firmware.audit",
+            "ipv6": "internet.ipv6",
+            "mesh": "mesh.topology",
+            "nat": "nat.status",
+            "port-forward": "nat.port_forward",
+            "ports": "network.ports",
+            "power": "system.power",
+            "qos": "qos.status",
+            "ddns": "network.ddns",
+            "iptv": "network.iptv",
+            "storage": "storage.status",
+            "time": "system.time",
+            "wifi-advanced": "wifi.advanced",
+            "schema": "agent.schema",
+            "speedtest": "internet.speedtest",
+        }
+        for command, operation in expected.items():
+            args = argparse.Namespace(command=command)
+            self.assertEqual(cli.operation_id(args), operation, command)
+
+    def test_read_commands_allowed_under_read_only_profile(self):
+        for command in ("firmware-check", "ipv6", "mesh", "nat", "ports", "power", "qos", "storage", "time"):
+            output = run_cli(["--json", "--no-input", "--profile", "read-only", command])
+            data = json.loads(output)
+            self.assertNotIn("error", data, command)
 
     def test_clients_active_outputs_devices(self):
         output = run_cli(["--json", "--no-input", "clients", "--active"])
@@ -509,7 +550,7 @@ class CliTests(unittest.TestCase):
             return {"list": {}}
 
         router.request = raw_request
-        with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp}, clear=False), patch.object(cli, "build_router", return_value=router):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp, **PROFILE_SCRUB}, clear=False), patch.object(cli, "build_router", return_value=router):
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
                 cli.main(["--json", "--no-input", "reservations"])
@@ -519,7 +560,7 @@ class CliTests(unittest.TestCase):
     def test_device_unblock_removes_blacklist_entry(self):
         router = FakeRouter()
         router.blacklist.append({"key": "block-1", "name": "debian_linux", "ipaddr": "192.168.0.79", "mac": "48-BA-4E-40-B4-F4"})
-        with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp}, clear=False), patch.object(cli, "build_router", return_value=router):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp, **PROFILE_SCRUB}, clear=False), patch.object(cli, "build_router", return_value=router):
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
                 cli.main(["--json", "--no-input", "device", "unblock", "48-BA-4E-40-B4-F4", "--yes"])
@@ -529,7 +570,7 @@ class CliTests(unittest.TestCase):
 
     def test_device_vpn_sets_client_device(self):
         router = FakeRouter()
-        with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp}, clear=False), patch.object(cli, "build_router", return_value=router):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp, **PROFILE_SCRUB}, clear=False), patch.object(cli, "build_router", return_value=router):
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
                 cli.main(["--json", "--no-input", "device", "vpn", "debian", "on", "--yes"])
@@ -592,7 +633,7 @@ class CliTests(unittest.TestCase):
 
     def test_read_places_operation_in_url(self):
         router = FakeRouter()
-        with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp}, clear=False), patch.object(cli, "build_router", return_value=router):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp, **PROFILE_SCRUB}, clear=False), patch.object(cli, "build_router", return_value=router):
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
                 cli.main(["--json", "--no-input", "read", "/admin/ledgeneral?form=setting"])
@@ -941,7 +982,7 @@ class CliTests(unittest.TestCase):
         out = io.StringIO()
         with (
             tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(out),
-            patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp}, clear=False),
+            patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp, **PROFILE_SCRUB}, clear=False),
             patch.object(cli.requests, "get", return_value=FakeResponse()),
             patch.object(cli, "build_router", return_value=FakeRouter()),
         ):
@@ -1118,7 +1159,7 @@ class CliTests(unittest.TestCase):
 
     def test_run_emits_structured_error_and_semantic_exit_code(self):
         err = io.StringIO()
-        with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp}, clear=False):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp, **PROFILE_SCRUB}, clear=False):
             with contextlib.redirect_stderr(err):
                 code = cli.run(["--disable-commands", "status", "status"])
         self.assertEqual(code, 4)
@@ -1127,7 +1168,7 @@ class CliTests(unittest.TestCase):
 
     def test_run_uses_confirmation_required_exit_code(self):
         err = io.StringIO()
-        with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp}, clear=False), patch.object(cli, "build_router", return_value=FakeRouter()):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp, **PROFILE_SCRUB}, clear=False), patch.object(cli, "build_router", return_value=FakeRouter()):
             with contextlib.redirect_stderr(err):
                 code = cli.run(["--json", "--no-input", "device", "reserve", "debian"])
         self.assertEqual(code, 5)
