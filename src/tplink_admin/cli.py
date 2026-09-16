@@ -2114,7 +2114,23 @@ def cmd_leases(args: argparse.Namespace) -> None:
 
 
 def cmd_reservations(args: argparse.Namespace) -> None:
-    emit(args, with_session(args, lambda router: router.get_ipv4_reservations()))
+    def action(router):
+        try:
+            return to_plain(router.get_ipv4_reservations())
+        except Exception:
+            # BE3500 firmware 1.3.3 answers {"list": {}} when no reservations
+            # exist; upstream _as_list only accepts a list payload, so fall
+            # back to the raw request and normalize locally.
+            raw = to_plain(api_request(router, operation_path(DHCP_RESERVATION, "load"), "operation=load", ignore_errors=True))
+            data = raw.get("data", raw) if isinstance(raw, dict) else raw
+            items = data.get("list", []) if isinstance(data, dict) else data
+            if isinstance(items, dict):
+                items = list(items.values())
+            if not isinstance(items, list):
+                items = []
+            return [item for item in items if isinstance(item, dict)]
+
+    emit(args, with_session(args, action))
 
 
 def cmd_devices(args: argparse.Namespace) -> None:
@@ -2396,7 +2412,17 @@ def cmd_device_dispatch(args: argparse.Namespace) -> None:
         "vpn": build_device_vpn_parser,
     }
     access_subcommands = {"status", "on", "off"}
-    if len(args.device_args) >= 2 and args.device_args[0] in commands:
+    if len(args.device_args) >= 1 and args.device_args[0] in commands and args.device_args[0] == "access":
+        # e.g. "device access" / "device access status" -> access_state defaults to status
+        action = "access"
+        subparser = commands[action]()
+        subvalues = vars(args).copy()
+        subvalues.pop("func", None)
+        subargs = argparse.Namespace(**subvalues)
+        rest = args.device_args[1:] or ["status"]
+        subparser.parse_args(rest, namespace=subargs)
+        subargs.func(subargs)
+    elif len(args.device_args) >= 2 and args.device_args[0] in commands:
         # e.g. "device reserve debian" -> device_args=['reserve', 'debian', '--yes']
         action = args.device_args[0]
         subparser = commands[action]()
