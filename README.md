@@ -1,12 +1,12 @@
 # tplinkctl
 
 [![CI](https://github.com/JithendraNara/tplinkctl/actions/workflows/ci.yml/badge.svg)](https://github.com/JithendraNara/tplinkctl/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/release-v0.5.0-blue.svg)](https://github.com/JithendraNara/tplinkctl/releases/tag/v0.5.0)
+[![Version](https://img.shields.io/badge/release-v0.5.1-blue.svg)](https://github.com/JithendraNara/tplinkctl/releases/tag/v0.5.1)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org/)
 [![CLI Spec](https://img.shields.io/badge/clispec-v0.2-emerald)](https://clispec.dev/)
 [![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 
-**Autonomous agent-ready CLI and stdio FastMCP server for local TP-Link router management.**
+**Autonomous agent-ready CLI and stdio JSON-RPC MCP server for local TP-Link router management.**
 
 `tplinkctl` turns stateful, slow, and browser-dependent router admin interfaces into a high-speed, local-first API interface designed for humans, shell scripts, and autonomous AI coding agents (Hermes, Claude Code, Cursor, Codex, OpenClaw).
 
@@ -27,6 +27,9 @@
 ### 1. Install
 
 ```bash
+# From PyPI (published as tplink-admin-cli — `tplinkctl` is the GitHub project name, not the PyPI name)
+pip install tplink-admin-cli
+
 # From source (or via uv / pip)
 git clone https://github.com/JithendraNara/tplinkctl.git
 cd tplinkctl
@@ -152,9 +155,9 @@ tplinkctl --json events --tail 5
 
 ---
 
-## FastMCP Server Integration
+## MCP Server Integration
 
-`tplinkctl-mcp` exposes 30 router tools over standard JSON-RPC stdio. Mutating MCP tools require `confirm=true` in tool arguments.
+`tplinkctl-mcp` exposes 30 router tools over standard JSON-RPC stdio (no MCP SDK / FastMCP dependency — see `src/tplink_admin/mcp.py`). Mutating MCP tools require `confirm=true` in tool arguments.
 
 Add `tplinkctl-mcp` to your agent configuration:
 
