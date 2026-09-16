@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from test_cli import FakeRouter
+from test_cli import FakeRouter, PROFILE_SCRUB
 
 from tplink_admin import cli, mcp
 
@@ -13,7 +13,7 @@ from tplink_admin import cli, mcp
 def call_tool_with_fake_router(name, arguments=None):
     with tempfile.TemporaryDirectory() as tmp:
         with (
-            patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp}, clear=False),
+            patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp, **PROFILE_SCRUB}, clear=False),
             patch.object(cli, "build_router", return_value=FakeRouter()),
         ):
             return mcp.call_tool(name, arguments or {})
@@ -21,7 +21,7 @@ def call_tool_with_fake_router(name, arguments=None):
 
 def call_tool_in_config(tmp, name, arguments=None):
     with (
-        patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp}, clear=False),
+        patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp, **PROFILE_SCRUB}, clear=False),
         patch.object(cli, "build_router", return_value=FakeRouter()),
     ):
         return mcp.call_tool(name, arguments or {})
