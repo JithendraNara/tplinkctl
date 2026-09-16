@@ -480,6 +480,42 @@ class CliTests(unittest.TestCase):
         self.assertTrue(data["blocked"])
         self.assertFalse(data["enforced"])
 
+    def test_device_access_without_state_defaults_to_status(self):
+        output = run_cli(["--json", "--no-input", "device", "access"])
+        data = json.loads(output)
+        self.assertIn("enabled", data)
+        self.assertIn("mode", data)
+
+    def test_device_access_status_is_explicit(self):
+        output = run_cli(["--json", "--no-input", "device", "access", "status"])
+        data = json.loads(output)
+        self.assertIn("enabled", data)
+        self.assertIn("blacklist", data)
+
+    def test_reservations_survives_empty_dict_payload(self):
+        # BE3500 firmware 1.3.3 answers {"list": {}} when no reservations
+        # exist; upstream _as_list rejects it, so cmd_reservations must
+        # normalize locally instead of crashing with a traceback.
+        from tplinkrouterc6u.common.exception import ClientError
+
+        router = FakeRouter()
+
+        def broken_reservations():
+            raise ClientError('IPv4 reservation response is an object without a list "list"')
+
+        router.get_ipv4_reservations = broken_reservations
+
+        def raw_request(path, data="", **kwargs):
+            return {"list": {}}
+
+        router.request = raw_request
+        with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp}, clear=False), patch.object(cli, "build_router", return_value=router):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                cli.main(["--json", "--no-input", "reservations"])
+        data = json.loads(out.getvalue())
+        self.assertEqual(data, [])
+
     def test_device_unblock_removes_blacklist_entry(self):
         router = FakeRouter()
         router.blacklist.append({"key": "block-1", "name": "debian_linux", "ipaddr": "192.168.0.79", "mac": "48-BA-4E-40-B4-F4"})
