@@ -1,0 +1,5427 @@
+{
+  "components": {
+    "schemas": {
+      "Error": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "enum": [
+                  "usage",
+                  "auth",
+                  "permission",
+                  "not_found",
+                  "confirmation_required",
+                  "conflict",
+                  "router",
+                  "internal"
+                ],
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "message"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "type": "object"
+      },
+      "Plan": {
+        "additionalProperties": false,
+        "properties": {
+          "arguments": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "diff": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "after": {},
+                "before": {},
+                "field": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field",
+                "before",
+                "after"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "executable": {
+            "type": "boolean"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "plan_id": {
+            "minLength": 32,
+            "type": "string"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "requires_confirmation": {
+            "const": true,
+            "type": "boolean"
+          },
+          "risk": {
+            "type": "string"
+          },
+          "rollback": {
+            "additionalProperties": false,
+            "properties": {
+              "automatic": {
+                "const": false,
+                "type": "boolean"
+              },
+              "commands": {
+                "items": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              "limitations": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "supported": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "supported",
+              "automatic",
+              "commands",
+              "limitations"
+            ],
+            "type": "object"
+          },
+          "target": {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        },
+        "required": [
+          "plan_id",
+          "operation",
+          "profile",
+          "expires_at",
+          "target",
+          "arguments",
+          "diff",
+          "risk",
+          "rollback",
+          "requires_confirmation",
+          "executable"
+        ],
+        "type": "object"
+      },
+      "ddns_statusInput": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "ddns_statusOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "device_blockInput": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm": {
+            "description": "Must be true to execute the mutation.",
+            "type": "boolean"
+          },
+          "enforce": {
+            "type": "boolean"
+          },
+          "query": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirm",
+          "query"
+        ],
+        "type": "object"
+      },
+      "device_blockOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "access_control": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "already_listed": {
+                "type": "boolean"
+              },
+              "blocked": {
+                "type": "boolean"
+              },
+              "device": {
+                "additionalProperties": true,
+                "properties": {
+                  "active": {
+                    "type": "boolean"
+                  },
+                  "hostname": {
+                    "type": "string"
+                  },
+                  "ip": {
+                    "type": "string"
+                  },
+                  "mac": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "hostname",
+                  "ip",
+                  "mac",
+                  "active"
+                ],
+                "type": "object"
+              },
+              "enforced": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "blocked",
+              "already_listed",
+              "enforced",
+              "device",
+              "access_control"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "device_blockRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm": {
+            "description": "Must be true to execute the mutation.",
+            "type": "boolean"
+          },
+          "enforce": {
+            "type": "boolean"
+          },
+          "plan_id": {
+            "maxLength": 128,
+            "minLength": 32,
+            "type": "string"
+          },
+          "reason": {
+            "description": "Accepted but fully redacted in audit records.",
+            "maxLength": 512,
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirm",
+          "plan_id"
+        ],
+        "type": "object"
+      },
+      "device_listInput": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "sort": {
+            "enum": [
+              "name",
+              "ip",
+              "speed",
+              "usage",
+              "signal"
+            ],
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "top": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "device_listOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "additionalProperties": true,
+              "properties": {
+                "active": {
+                  "type": "boolean"
+                },
+                "hostname": {
+                  "type": "string"
+                },
+                "ip": {
+                  "type": "string"
+                },
+                "mac": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "hostname",
+                "ip",
+                "mac",
+                "active"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "device_planInput": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "reserve",
+              "release",
+              "block",
+              "unblock"
+            ],
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "enforce": {
+            "type": "boolean"
+          },
+          "query": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "query"
+        ],
+        "type": "object"
+      },
+      "device_planOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "arguments": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "diff": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "after": {},
+                "before": {},
+                "field": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field",
+                "before",
+                "after"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "executable": {
+            "type": "boolean"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "plan_id": {
+            "minLength": 32,
+            "type": "string"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "requires_confirmation": {
+            "const": true,
+            "type": "boolean"
+          },
+          "risk": {
+            "type": "string"
+          },
+          "rollback": {
+            "additionalProperties": false,
+            "properties": {
+              "automatic": {
+                "const": false,
+                "type": "boolean"
+              },
+              "commands": {
+                "items": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              "limitations": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "supported": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "supported",
+              "automatic",
+              "commands",
+              "limitations"
+            ],
+            "type": "object"
+          },
+          "target": {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        },
+        "required": [
+          "plan_id",
+          "operation",
+          "profile",
+          "expires_at",
+          "target",
+          "arguments",
+          "diff",
+          "risk",
+          "rollback",
+          "requires_confirmation",
+          "executable"
+        ],
+        "type": "object"
+      },
+      "device_planRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "reserve",
+              "release",
+              "block",
+              "unblock"
+            ],
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "enforce": {
+            "type": "boolean"
+          },
+          "reason": {
+            "description": "Accepted but fully redacted in audit records.",
+            "maxLength": 512,
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "device_showInput": {
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "device_showOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": true,
+            "properties": {
+              "active": {
+                "type": "boolean"
+              },
+              "hostname": {
+                "type": "string"
+              },
+              "ip": {
+                "type": "string"
+              },
+              "mac": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "hostname",
+              "ip",
+              "mac",
+              "active"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "device_unblockInput": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm": {
+            "description": "Must be true to execute the mutation.",
+            "type": "boolean"
+          },
+          "query": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirm",
+          "query"
+        ],
+        "type": "object"
+      },
+      "device_unblockOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "device": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "unblocked": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "unblocked",
+              "device"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "device_unblockRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm": {
+            "description": "Must be true to execute the mutation.",
+            "type": "boolean"
+          },
+          "plan_id": {
+            "maxLength": 128,
+            "minLength": 32,
+            "type": "string"
+          },
+          "reason": {
+            "description": "Accepted but fully redacted in audit records.",
+            "maxLength": 512,
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirm",
+          "plan_id"
+        ],
+        "type": "object"
+      },
+      "doctor_deepInput": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "doctor_deepOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "firmware_auditInput": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "firmware_auditOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "iptv_statusInput": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "iptv_statusOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "ipv6_statusInput": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "ipv6_statusOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "led_planInput": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "on",
+              "off",
+              "schedule"
+            ],
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "end": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$",
+            "type": "string"
+          },
+          "start": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "led_planOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "arguments": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "diff": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "after": {},
+                "before": {},
+                "field": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field",
+                "before",
+                "after"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "executable": {
+            "type": "boolean"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "plan_id": {
+            "minLength": 32,
+            "type": "string"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "requires_confirmation": {
+            "const": true,
+            "type": "boolean"
+          },
+          "risk": {
+            "type": "string"
+          },
+          "rollback": {
+            "additionalProperties": false,
+            "properties": {
+              "automatic": {
+                "const": false,
+                "type": "boolean"
+              },
+              "commands": {
+                "items": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              "limitations": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "supported": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "supported",
+              "automatic",
+              "commands",
+              "limitations"
+            ],
+            "type": "object"
+          },
+          "target": {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        },
+        "required": [
+          "plan_id",
+          "operation",
+          "profile",
+          "expires_at",
+          "target",
+          "arguments",
+          "diff",
+          "risk",
+          "rollback",
+          "requires_confirmation",
+          "executable"
+        ],
+        "type": "object"
+      },
+      "led_planRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "on",
+              "off",
+              "schedule"
+            ],
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "end": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Accepted but fully redacted in audit records.",
+            "maxLength": 512,
+            "type": "string"
+          },
+          "start": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "led_setInput": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "on",
+              "off",
+              "schedule"
+            ],
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "confirm": {
+            "description": "Must be true to execute the mutation.",
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "end": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$",
+            "type": "string"
+          },
+          "start": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "confirm"
+        ],
+        "type": "object"
+      },
+      "led_setOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": true,
+            "properties": {
+              "enabled": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "schedule": {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            },
+            "required": [
+              "enabled",
+              "schedule"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "led_setRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "on",
+              "off",
+              "schedule"
+            ],
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "confirm": {
+            "description": "Must be true to execute the mutation.",
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "end": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$",
+            "type": "string"
+          },
+          "plan_id": {
+            "maxLength": 128,
+            "minLength": 32,
+            "type": "string"
+          },
+          "reason": {
+            "description": "Accepted but fully redacted in audit records.",
+            "maxLength": 512,
+            "type": "string"
+          },
+          "start": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "confirm",
+          "plan_id"
+        ],
+        "type": "object"
+      },
+      "led_statusInput": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "led_statusOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": true,
+            "properties": {
+              "enabled": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "schedule": {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            },
+            "required": [
+              "enabled",
+              "schedule"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "mesh_devicesInput": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mesh_devicesOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "nat_statusInput": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "nat_statusOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "port_forward_listInput": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "port_forward_listOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "port_speedInput": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "port_speedOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "power_statusInput": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "power_statusOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "qos_statusInput": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "qos_statusOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "router_statusInput": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "router_statusOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": true,
+            "properties": {
+              "health": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "router": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "wan": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "wifi": {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            },
+            "required": [
+              "router",
+              "wan",
+              "wifi",
+              "health"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "storage_statusInput": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "storage_statusOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "time_statusInput": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "time_statusOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "vpn_client_statusInput": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "vpn_client_statusOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "vpn_statusInput": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "vpn_statusOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "wifi_advancedInput": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "wifi_advancedOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "wifi_configInput": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "confirm": {
+            "description": "Must be true to execute the mutation.",
+            "type": "boolean"
+          },
+          "connection": {
+            "enum": [
+              "host_2g",
+              "host_5g",
+              "host_6g",
+              "guest_2g",
+              "guest_5g",
+              "guest_6g",
+              "iot_2g",
+              "iot_5g",
+              "iot_6g",
+              "wired"
+            ],
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "ssid": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "txpower": {
+            "enum": [
+              "low",
+              "middle",
+              "high"
+            ],
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "width": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirm",
+          "connection"
+        ],
+        "type": "object"
+      },
+      "wifi_configOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": true,
+            "properties": {
+              "configured": {
+                "type": "boolean"
+              },
+              "connection": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "connection",
+              "configured"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "wifi_configRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "confirm": {
+            "description": "Must be true to execute the mutation.",
+            "type": "boolean"
+          },
+          "plan_id": {
+            "maxLength": 128,
+            "minLength": 32,
+            "type": "string"
+          },
+          "reason": {
+            "description": "Accepted but fully redacted in audit records.",
+            "maxLength": 512,
+            "type": "string"
+          },
+          "ssid": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "txpower": {
+            "enum": [
+              "low",
+              "middle",
+              "high"
+            ],
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "width": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirm",
+          "plan_id"
+        ],
+        "type": "object"
+      },
+      "wifi_config_planInput": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "connection": {
+            "enum": [
+              "host_2g",
+              "host_5g",
+              "host_6g",
+              "guest_2g",
+              "guest_5g",
+              "guest_6g",
+              "iot_2g",
+              "iot_5g",
+              "iot_6g",
+              "wired"
+            ],
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "ssid": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "txpower": {
+            "enum": [
+              "low",
+              "middle",
+              "high"
+            ],
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "width": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection"
+        ],
+        "type": "object"
+      },
+      "wifi_config_planOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "arguments": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "diff": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "after": {},
+                "before": {},
+                "field": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field",
+                "before",
+                "after"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "executable": {
+            "type": "boolean"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "plan_id": {
+            "minLength": 32,
+            "type": "string"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "requires_confirmation": {
+            "const": true,
+            "type": "boolean"
+          },
+          "risk": {
+            "type": "string"
+          },
+          "rollback": {
+            "additionalProperties": false,
+            "properties": {
+              "automatic": {
+                "const": false,
+                "type": "boolean"
+              },
+              "commands": {
+                "items": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              "limitations": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "supported": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "supported",
+              "automatic",
+              "commands",
+              "limitations"
+            ],
+            "type": "object"
+          },
+          "target": {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        },
+        "required": [
+          "plan_id",
+          "operation",
+          "profile",
+          "expires_at",
+          "target",
+          "arguments",
+          "diff",
+          "risk",
+          "rollback",
+          "requires_confirmation",
+          "executable"
+        ],
+        "type": "object"
+      },
+      "wifi_config_planRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "reason": {
+            "description": "Accepted but fully redacted in audit records.",
+            "maxLength": 512,
+            "type": "string"
+          },
+          "ssid": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "txpower": {
+            "enum": [
+              "low",
+              "middle",
+              "high"
+            ],
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "width": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "wifi_infoInput": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "wifi_infoOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "errors": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "networks": {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "smart_connect": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "networks",
+              "smart_connect",
+              "errors"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "wireguard_statusInput": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "wireguard_statusOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "Bearer-authenticated, server-profile-controlled router resources. Mutations require a single-use plan_id plus confirm=true. Plans expire after 120 seconds by default and are invalid after restart. Plans bind actor, profile, operation, arguments and target. Changed router state requires replanning. No automatic rollback or exactly-once delivery guarantee after an upstream failure. Non-loopback exposure requires an explicit bind and a trusted TLS proxy or encrypted tunnel.",
+    "title": "tplinkctl local API",
+    "version": "0.5.3"
+  },
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "openapi": "3.1.2",
+  "paths": {
+    "/v1/devices": {
+      "get": {
+        "operationId": "device_list",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "active",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "enum": [
+                "name",
+                "ip",
+                "speed",
+                "usage",
+                "signal"
+              ],
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "top",
+            "required": false,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/device_listOutput"
+                }
+              }
+            },
+            "description": "Plan or redacted command result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "usage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "auth"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "confirmation_required, conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "internal"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "router"
+          }
+        },
+        "summary": "List connected devices with hostname, IP, MAC, speed, usage, and connection type.",
+        "tags": [
+          "devices"
+        ],
+        "x-tplinkctl-command": [
+          "tplinkctl",
+          "--json",
+          "--no-input",
+          "devices"
+        ],
+        "x-tplinkctl-input-schema": {
+          "$ref": "#/components/schemas/device_listInput"
+        },
+        "x-tplinkctl-plan-operation": null,
+        "x-tplinkctl-profile": [
+          "read-only",
+          "device-admin",
+          "network-admin",
+          "dangerous"
+        ],
+        "x-tplinkctl-read-only": true,
+        "x-tplinkctl-risk": "read_only",
+        "x-tplinkctl-rollback": {
+          "automatic": false,
+          "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+          "mode": "not_applicable"
+        }
+      }
+    },
+    "/v1/devices/{query}": {
+      "get": {
+        "operationId": "device_show",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "query",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/device_showOutput"
+                }
+              }
+            },
+            "description": "Plan or redacted command result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "usage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "auth"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "confirmation_required, conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "internal"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "router"
+          }
+        },
+        "summary": "Resolve one device by hostname substring, IP, or MAC address.",
+        "tags": [
+          "devices"
+        ],
+        "x-tplinkctl-command": [
+          "tplinkctl",
+          "--json",
+          "--no-input",
+          "device",
+          "<query>"
+        ],
+        "x-tplinkctl-input-schema": {
+          "$ref": "#/components/schemas/device_showInput"
+        },
+        "x-tplinkctl-plan-operation": null,
+        "x-tplinkctl-profile": [
+          "read-only",
+          "device-admin",
+          "network-admin",
+          "dangerous"
+        ],
+        "x-tplinkctl-read-only": true,
+        "x-tplinkctl-risk": "read_only",
+        "x-tplinkctl-rollback": {
+          "automatic": false,
+          "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+          "mode": "not_applicable"
+        }
+      }
+    },
+    "/v1/devices/{query}/block": {
+      "delete": {
+        "operationId": "device_unblock",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "query",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/device_unblockRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/device_unblockOutput"
+                }
+              }
+            },
+            "description": "Plan or redacted command result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "usage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "auth"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "confirmation_required, conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "internal"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "router"
+          }
+        },
+        "summary": "Remove a device from the access-control blacklist.",
+        "tags": [
+          "devices"
+        ],
+        "x-tplinkctl-command": [
+          "tplinkctl",
+          "--json",
+          "--no-input",
+          "device",
+          "unblock",
+          "<query>",
+          "--yes"
+        ],
+        "x-tplinkctl-input-schema": {
+          "$ref": "#/components/schemas/device_unblockInput"
+        },
+        "x-tplinkctl-plan-operation": "device_plan",
+        "x-tplinkctl-profile": [
+          "device-admin",
+          "network-admin",
+          "dangerous"
+        ],
+        "x-tplinkctl-read-only": false,
+        "x-tplinkctl-risk": "device_access_policy",
+        "x-tplinkctl-rollback": {
+          "automatic": false,
+          "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+          "mode": "manual"
+        }
+      },
+      "put": {
+        "operationId": "device_block",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "query",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/device_blockRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/device_blockOutput"
+                }
+              }
+            },
+            "description": "Plan or redacted command result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "usage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "auth"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "confirmation_required, conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "internal"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "router"
+          }
+        },
+        "summary": "Add a device to the access-control blacklist. Requires explicit confirmation and should be preceded by device_plan.",
+        "tags": [
+          "devices"
+        ],
+        "x-tplinkctl-command": [
+          "tplinkctl",
+          "--json",
+          "--no-input",
+          "device",
+          "block",
+          "<query>",
+          "--yes"
+        ],
+        "x-tplinkctl-input-schema": {
+          "$ref": "#/components/schemas/device_blockInput"
+        },
+        "x-tplinkctl-plan-operation": "device_plan",
+        "x-tplinkctl-profile": [
+          "device-admin",
+          "network-admin",
+          "dangerous"
+        ],
+        "x-tplinkctl-read-only": false,
+        "x-tplinkctl-risk": "device_connectivity_loss",
+        "x-tplinkctl-rollback": {
+          "automatic": false,
+          "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+          "mode": "manual"
+        }
+      }
+    },
+    "/v1/devices/{query}/plans": {
+      "post": {
+        "operationId": "device_plan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "query",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/device_planRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/device_planOutput"
+                }
+              }
+            },
+            "description": "Plan or redacted command result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "usage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "auth"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "confirmation_required, conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "internal"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "router"
+          }
+        },
+        "summary": "Plan a device mutation without changing router state.",
+        "tags": [
+          "devices"
+        ],
+        "x-tplinkctl-command": [
+          "tplinkctl",
+          "--json",
+          "--no-input",
+          "device",
+          "<action>",
+          "<query>",
+          "--plan"
+        ],
+        "x-tplinkctl-input-schema": {
+          "$ref": "#/components/schemas/device_planInput"
+        },
+        "x-tplinkctl-plan-operation": null,
+        "x-tplinkctl-profile": [
+          "device-admin",
+          "network-admin",
+          "dangerous"
+        ],
+        "x-tplinkctl-read-only": true,
+        "x-tplinkctl-risk": "read_only",
+        "x-tplinkctl-rollback": {
+          "automatic": false,
+          "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+          "mode": "not_applicable"
+        }
+      }
+    },
+    "/v1/health": {
+      "get": {
+        "operationId": "doctor_deep",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/doctor_deepOutput"
+                }
+              }
+            },
+            "description": "Plan or redacted command result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "usage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "auth"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "confirmation_required, conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "internal"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "router"
+          }
+        },
+        "summary": "Run read-only web, auth, and endpoint health probes.",
+        "tags": [
+          "health"
+        ],
+        "x-tplinkctl-command": [
+          "tplinkctl",
+          "--json",
+          "--no-input",
+          "doctor",
+          "--deep"
+        ],
+        "x-tplinkctl-input-schema": {
+          "$ref": "#/components/schemas/doctor_deepInput"
+        },
+        "x-tplinkctl-plan-operation": null,
+        "x-tplinkctl-profile": [
+          "read-only",
+          "device-admin",
+          "network-admin",
+          "dangerous"
+        ],
+        "x-tplinkctl-read-only": true,
+        "x-tplinkctl-risk": "read_only",
+        "x-tplinkctl-rollback": {
+          "automatic": false,
+          "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+          "mode": "not_applicable"
+        }
+      }
+    },
+    "/v1/mesh": {
+      "get": {
+        "operationId": "mesh_devices",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/mesh_devicesOutput"
+                }
+              }
+            },
+            "description": "Plan or redacted command result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "usage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "auth"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "confirmation_required, conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "internal"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "router"
+          }
+        },
+        "summary": "List EasyMesh network nodes, roles, and connected client counts.",
+        "tags": [
+          "mesh"
+        ],
+        "x-tplinkctl-command": [
+          "tplinkctl",
+          "--json",
+          "--no-input",
+          "mesh"
+        ],
+        "x-tplinkctl-input-schema": {
+          "$ref": "#/components/schemas/mesh_devicesInput"
+        },
+        "x-tplinkctl-plan-operation": null,
+        "x-tplinkctl-profile": [
+          "read-only",
+          "device-admin",
+          "network-admin",
+          "dangerous"
+        ],
+        "x-tplinkctl-read-only": true,
+        "x-tplinkctl-risk": "read_only",
+        "x-tplinkctl-rollback": {
+          "automatic": false,
+          "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+          "mode": "not_applicable"
+        }
+      }
+    },
+    "/v1/nat": {
+      "get": {
+        "operationId": "nat_status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/nat_statusOutput"
+                }
+              }
+            },
+            "description": "Plan or redacted command result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "usage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "auth"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "confirmation_required, conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "internal"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "router"
+          }
+        },
+        "summary": "Show NAT ALG passthrough rules, DMZ status, and UPnP enablement.",
+        "tags": [
+          "nat"
+        ],
+        "x-tplinkctl-command": [
+          "tplinkctl",
+          "--json",
+          "--no-input",
+          "nat"
+        ],
+        "x-tplinkctl-input-schema": {
+          "$ref": "#/components/schemas/nat_statusInput"
+        },
+        "x-tplinkctl-plan-operation": null,
+        "x-tplinkctl-profile": [
+          "read-only",
+          "device-admin",
+          "network-admin",
+          "dangerous"
+        ],
+        "x-tplinkctl-read-only": true,
+        "x-tplinkctl-risk": "read_only",
+        "x-tplinkctl-rollback": {
+          "automatic": false,
+          "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+          "mode": "not_applicable"
+        }
+      }
+    },
+    "/v1/nat/port-forwards": {
+      "get": {
+        "operationId": "port_forward_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/port_forward_listOutput"
+                }
+              }
+            },
+            "description": "Plan or redacted command result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "usage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "auth"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "confirmation_required, conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "internal"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "router"
+          }
+        },
+        "summary": "List NAT virtual servers and port forwarding rules.",
+        "tags": [
+          "nat"
+        ],
+        "x-tplinkctl-command": [
+          "tplinkctl",
+          "--json",
+          "--no-input",
+          "port-forward"
+        ],
+        "x-tplinkctl-input-schema": {
+          "$ref": "#/components/schemas/port_forward_listInput"
+        },
+        "x-tplinkctl-plan-operation": null,
+        "x-tplinkctl-profile": [
+          "read-only",
+          "device-admin",
+          "network-admin",
+          "dangerous"
+        ],
+        "x-tplinkctl-read-only": true,
+        "x-tplinkctl-risk": "read_only",
+        "x-tplinkctl-rollback": {
+          "automatic": false,
+          "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+          "mode": "not_applicable"
+        }
+      }
+    },
+    "/v1/network/ddns": {
+      "get": {
+        "operationId": "ddns_status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ddns_statusOutput"
+                }
+              }
+            },
+            "description": "Plan or redacted command result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "usage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "auth"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "confirmation_required, conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "internal"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "router"
+          }
+        },
+        "summary": "Show the configured dynamic DNS provider.",
+        "tags": [
+          "network"
+        ],
+        "x-tplinkctl-command": [
+          "tplinkctl",
+          "--json",
+          "--no-input",
+          "ddns"
+        ],
+        "x-tplinkctl-input-schema": {
+          "$ref": "#/components/schemas/ddns_statusInput"
+        },
+        "x-tplinkctl-plan-operation": null,
+        "x-tplinkctl-profile": [
+          "read-only",
+          "device-admin",
+          "network-admin",
+          "dangerous"
+        ],
+        "x-tplinkctl-read-only": true,
+        "x-tplinkctl-risk": "read_only",
+        "x-tplinkctl-rollback": {
+          "automatic": false,
+          "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+          "mode": "not_applicable"
+        }
+      }
+    },
+    "/v1/network/iptv": {
+      "get": {
+        "operationId": "iptv_status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/iptv_statusOutput"
+                }
+              }
+            },
+            "description": "Plan or redacted command result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "usage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "auth"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "confirmation_required, conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "internal"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "router"
+          }
+        },
+        "summary": "Show IPTV/VLAN configuration, IGMP snooping, and LAN port assignments.",
+        "tags": [
+          "network"
+        ],
+        "x-tplinkctl-command": [
+          "tplinkctl",
+          "--json",
+          "--no-input",
+          "iptv"
+        ],
+        "x-tplinkctl-input-schema": {
+          "$ref": "#/components/schemas/iptv_statusInput"
+        },
+        "x-tplinkctl-plan-operation": null,
+        "x-tplinkctl-profile": [
+          "read-only",
+          "device-admin",
+          "network-admin",
+          "dangerous"
+        ],
+        "x-tplinkctl-read-only": true,
+        "x-tplinkctl-risk": "read_only",
+        "x-tplinkctl-rollback": {
+          "automatic": false,
+          "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+          "mode": "not_applicable"
+        }
+      }
+    },
+    "/v1/network/ipv6": {
+      "get": {
+        "operationId": "ipv6_status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ipv6_statusOutput"
+                }
+              }
+            },
+            "description": "Plan or redacted command result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "usage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "auth"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "confirmation_required, conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "internal"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "router"
+          }
+        },
+        "summary": "Show WAN and LAN IPv6 configuration and status.",
+        "tags": [
+          "network"
+        ],
+        "x-tplinkctl-command": [
+          "tplinkctl",
+          "--json",
+          "--no-input",
+          "ipv6"
+        ],
+        "x-tplinkctl-input-schema": {
+          "$ref": "#/components/schemas/ipv6_statusInput"
+        },
+        "x-tplinkctl-plan-operation": null,
+        "x-tplinkctl-profile": [
+          "read-only",
+          "device-admin",
+          "network-admin",
+          "dangerous"
+        ],
+        "x-tplinkctl-read-only": true,
+        "x-tplinkctl-risk": "read_only",
+        "x-tplinkctl-rollback": {
+          "automatic": false,
+          "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+          "mode": "not_applicable"
+        }
+      }
+    },
+    "/v1/network/ports": {
+      "get": {
+        "operationId": "port_speed",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/port_speedOutput"
+                }
+              }
+            },
+            "description": "Plan or redacted command result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "usage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "auth"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "confirmation_required, conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "internal"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "router"
+          }
+        },
+        "summary": "Show physical Ethernet port link speed negotiation and supported speeds.",
+        "tags": [
+          "network"
+        ],
+        "x-tplinkctl-command": [
+          "tplinkctl",
+          "--json",
+          "--no-input",
+          "ports"
+        ],
+        "x-tplinkctl-input-schema": {
+          "$ref": "#/components/schemas/port_speedInput"
+        },
+        "x-tplinkctl-plan-operation": null,
+        "x-tplinkctl-profile": [
+          "read-only",
+          "device-admin",
+          "network-admin",
+          "dangerous"
+        ],
+        "x-tplinkctl-read-only": true,
+        "x-tplinkctl-risk": "read_only",
+        "x-tplinkctl-rollback": {
+          "automatic": false,
+          "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+          "mode": "not_applicable"
+        }
+      }
+    },
+    "/v1/qos": {
+      "get": {
+        "operationId": "qos_status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/qos_statusOutput"
+                }
+              }
+            },
+            "description": "Plan or redacted command result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "usage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "auth"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "confirmation_required, conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "internal"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "router"
+          }
+        },
+        "summary": "Show Quality of Service (QoS) enablement, bandwidth limits, and priority splits.",
+        "tags": [
+          "qos"
+        ],
+        "x-tplinkctl-command": [
+          "tplinkctl",
+          "--json",
+          "--no-input",
+          "qos"
+        ],
+        "x-tplinkctl-input-schema": {
+          "$ref": "#/components/schemas/qos_statusInput"
+        },
+        "x-tplinkctl-plan-operation": null,
+        "x-tplinkctl-profile": [
+          "read-only",
+          "device-admin",
+          "network-admin",
+          "dangerous"
+        ],
+        "x-tplinkctl-read-only": true,
+        "x-tplinkctl-risk": "read_only",
+        "x-tplinkctl-rollback": {
+          "automatic": false,
+          "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+          "mode": "not_applicable"
+        }
+      }
+    },
+    "/v1/router/firmware": {
+      "get": {
+        "operationId": "firmware_audit",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/firmware_auditOutput"
+                }
+              }
+            },
+            "description": "Plan or redacted command result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "usage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "auth"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "confirmation_required, conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "internal"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "router"
+          }
+        },
+        "summary": "Check current firmware, update availability, and auto-update settings without installing anything.",
+        "tags": [
+          "router"
+        ],
+        "x-tplinkctl-command": [
+          "tplinkctl",
+          "--json",
+          "--no-input",
+          "firmware-check"
+        ],
+        "x-tplinkctl-input-schema": {
+          "$ref": "#/components/schemas/firmware_auditInput"
+        },
+        "x-tplinkctl-plan-operation": null,
+        "x-tplinkctl-profile": [
+          "read-only",
+          "device-admin",
+          "network-admin",
+          "dangerous"
+        ],
+        "x-tplinkctl-read-only": true,
+        "x-tplinkctl-risk": "read_only",
+        "x-tplinkctl-rollback": {
+          "automatic": false,
+          "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+          "mode": "not_applicable"
+        }
+      }
+    },
+    "/v1/router/led": {
+      "get": {
+        "operationId": "led_status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/led_statusOutput"
+                }
+              }
+            },
+            "description": "Plan or redacted command result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "usage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "auth"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "confirmation_required, conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "internal"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "router"
+          }
+        },
+        "summary": "Return router LED and nightly LED-off schedule status.",
+        "tags": [
+          "router"
+        ],
+        "x-tplinkctl-command": [
+          "tplinkctl",
+          "--json",
+          "--no-input",
+          "led",
+          "status"
+        ],
+        "x-tplinkctl-input-schema": {
+          "$ref": "#/components/schemas/led_statusInput"
+        },
+        "x-tplinkctl-plan-operation": null,
+        "x-tplinkctl-profile": [
+          "read-only",
+          "device-admin",
+          "network-admin",
+          "dangerous"
+        ],
+        "x-tplinkctl-read-only": true,
+        "x-tplinkctl-risk": "read_only",
+        "x-tplinkctl-rollback": {
+          "automatic": false,
+          "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+          "mode": "not_applicable"
+        }
+      },
+      "put": {
+        "operationId": "led_set",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/led_setRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/led_setOutput"
+                }
+              }
+            },
+            "description": "Plan or redacted command result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "usage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "auth"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "confirmation_required, conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "internal"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "router"
+          }
+        },
+        "summary": "Change router LEDs or the nightly LED-off schedule. Requires explicit confirmation and should be preceded by led_plan.",
+        "tags": [
+          "router"
+        ],
+        "x-tplinkctl-command": [
+          "tplinkctl",
+          "--json",
+          "--no-input",
+          "led",
+          "<action>",
+          "--yes"
+        ],
+        "x-tplinkctl-input-schema": {
+          "$ref": "#/components/schemas/led_setInput"
+        },
+        "x-tplinkctl-plan-operation": "led_plan",
+        "x-tplinkctl-profile": [
+          "network-admin",
+          "dangerous"
+        ],
+        "x-tplinkctl-read-only": false,
+        "x-tplinkctl-risk": "physical_indicator_change",
+        "x-tplinkctl-rollback": {
+          "automatic": false,
+          "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+          "mode": "manual"
+        }
+      }
+    },
+    "/v1/router/led/plans": {
+      "post": {
+        "operationId": "led_plan",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/led_planRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/led_planOutput"
+                }
+              }
+            },
+            "description": "Plan or redacted command result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "usage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "auth"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "confirmation_required, conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "internal"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "router"
+          }
+        },
+        "summary": "Plan a router LED or nightly schedule change without changing router state.",
+        "tags": [
+          "router"
+        ],
+        "x-tplinkctl-command": [
+          "tplinkctl",
+          "--json",
+          "--no-input",
+          "led",
+          "<action>",
+          "--plan"
+        ],
+        "x-tplinkctl-input-schema": {
+          "$ref": "#/components/schemas/led_planInput"
+        },
+        "x-tplinkctl-plan-operation": null,
+        "x-tplinkctl-profile": [
+          "network-admin",
+          "dangerous"
+        ],
+        "x-tplinkctl-read-only": true,
+        "x-tplinkctl-risk": "read_only",
+        "x-tplinkctl-rollback": {
+          "automatic": false,
+          "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+          "mode": "not_applicable"
+        }
+      }
+    },
+    "/v1/router/status": {
+      "get": {
+        "operationId": "router_status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/router_statusOutput"
+                }
+              }
+            },
+            "description": "Plan or redacted command result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "usage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "auth"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "confirmation_required, conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "internal"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "router"
+          }
+        },
+        "summary": "Return router, WAN, Wi-Fi, health, and connected device summary.",
+        "tags": [
+          "router"
+        ],
+        "x-tplinkctl-command": [
+          "tplinkctl",
+          "--json",
+          "--no-input",
+          "status"
+        ],
+        "x-tplinkctl-input-schema": {
+          "$ref": "#/components/schemas/router_statusInput"
+        },
+        "x-tplinkctl-plan-operation": null,
+        "x-tplinkctl-profile": [
+          "read-only",
+          "device-admin",
+          "network-admin",
+          "dangerous"
+        ],
+        "x-tplinkctl-read-only": true,
+        "x-tplinkctl-risk": "read_only",
+        "x-tplinkctl-rollback": {
+          "automatic": false,
+          "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+          "mode": "not_applicable"
+        }
+      }
+    },
+    "/v1/storage": {
+      "get": {
+        "operationId": "storage_status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/storage_statusOutput"
+                }
+              }
+            },
+            "description": "Plan or redacted command result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "usage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "auth"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "confirmation_required, conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "internal"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "router"
+          }
+        },
+        "summary": "Show attached USB storage disks, Samba/FTP folder sharing, and Apple Time Machine status.",
+        "tags": [
+          "storage"
+        ],
+        "x-tplinkctl-command": [
+          "tplinkctl",
+          "--json",
+          "--no-input",
+          "storage"
+        ],
+        "x-tplinkctl-input-schema": {
+          "$ref": "#/components/schemas/storage_statusInput"
+        },
+        "x-tplinkctl-plan-operation": null,
+        "x-tplinkctl-profile": [
+          "read-only",
+          "device-admin",
+          "network-admin",
+          "dangerous"
+        ],
+        "x-tplinkctl-read-only": true,
+        "x-tplinkctl-risk": "read_only",
+        "x-tplinkctl-rollback": {
+          "automatic": false,
+          "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+          "mode": "not_applicable"
+        }
+      }
+    },
+    "/v1/system/power": {
+      "get": {
+        "operationId": "power_status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/power_statusOutput"
+                }
+              }
+            },
+            "description": "Plan or redacted command result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "usage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "auth"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "confirmation_required, conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "internal"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "router"
+          }
+        },
+        "summary": "Show router eco/power mode, smart eco state, and scheduled power-saving rules.",
+        "tags": [
+          "system"
+        ],
+        "x-tplinkctl-command": [
+          "tplinkctl",
+          "--json",
+          "--no-input",
+          "power"
+        ],
+        "x-tplinkctl-input-schema": {
+          "$ref": "#/components/schemas/power_statusInput"
+        },
+        "x-tplinkctl-plan-operation": null,
+        "x-tplinkctl-profile": [
+          "read-only",
+          "device-admin",
+          "network-admin",
+          "dangerous"
+        ],
+        "x-tplinkctl-read-only": true,
+        "x-tplinkctl-risk": "read_only",
+        "x-tplinkctl-rollback": {
+          "automatic": false,
+          "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+          "mode": "not_applicable"
+        }
+      }
+    },
+    "/v1/system/time": {
+      "get": {
+        "operationId": "time_status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/time_statusOutput"
+                }
+              }
+            },
+            "description": "Plan or redacted command result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "usage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "auth"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "confirmation_required, conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "internal"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "router"
+          }
+        },
+        "summary": "Show router system date, time, timezone, and NTP server configuration.",
+        "tags": [
+          "system"
+        ],
+        "x-tplinkctl-command": [
+          "tplinkctl",
+          "--json",
+          "--no-input",
+          "time"
+        ],
+        "x-tplinkctl-input-schema": {
+          "$ref": "#/components/schemas/time_statusInput"
+        },
+        "x-tplinkctl-plan-operation": null,
+        "x-tplinkctl-profile": [
+          "read-only",
+          "device-admin",
+          "network-admin",
+          "dangerous"
+        ],
+        "x-tplinkctl-read-only": true,
+        "x-tplinkctl-risk": "read_only",
+        "x-tplinkctl-rollback": {
+          "automatic": false,
+          "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+          "mode": "not_applicable"
+        }
+      }
+    },
+    "/v1/vpn/client": {
+      "get": {
+        "operationId": "vpn_client_status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/vpn_client_statusOutput"
+                }
+              }
+            },
+            "description": "Plan or redacted command result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "usage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "auth"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "confirmation_required, conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "internal"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "router"
+          }
+        },
+        "summary": "Read VPN client enablement and profiles.",
+        "tags": [
+          "vpn"
+        ],
+        "x-tplinkctl-command": [
+          "tplinkctl",
+          "--json",
+          "--no-input",
+          "vpn-client-status"
+        ],
+        "x-tplinkctl-input-schema": {
+          "$ref": "#/components/schemas/vpn_client_statusInput"
+        },
+        "x-tplinkctl-plan-operation": null,
+        "x-tplinkctl-profile": [
+          "read-only",
+          "device-admin",
+          "network-admin",
+          "dangerous"
+        ],
+        "x-tplinkctl-read-only": true,
+        "x-tplinkctl-risk": "read_only",
+        "x-tplinkctl-rollback": {
+          "automatic": false,
+          "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+          "mode": "not_applicable"
+        }
+      }
+    },
+    "/v1/vpn/server": {
+      "get": {
+        "operationId": "vpn_status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/vpn_statusOutput"
+                }
+              }
+            },
+            "description": "Plan or redacted command result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "usage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "auth"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "confirmation_required, conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "internal"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "router"
+          }
+        },
+        "summary": "Read VPN server status.",
+        "tags": [
+          "vpn"
+        ],
+        "x-tplinkctl-command": [
+          "tplinkctl",
+          "--json",
+          "--no-input",
+          "vpn-status"
+        ],
+        "x-tplinkctl-input-schema": {
+          "$ref": "#/components/schemas/vpn_statusInput"
+        },
+        "x-tplinkctl-plan-operation": null,
+        "x-tplinkctl-profile": [
+          "read-only",
+          "device-admin",
+          "network-admin",
+          "dangerous"
+        ],
+        "x-tplinkctl-read-only": true,
+        "x-tplinkctl-risk": "read_only",
+        "x-tplinkctl-rollback": {
+          "automatic": false,
+          "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+          "mode": "not_applicable"
+        }
+      }
+    },
+    "/v1/vpn/wireguard": {
+      "get": {
+        "operationId": "wireguard_status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/wireguard_statusOutput"
+                }
+              }
+            },
+            "description": "Plan or redacted command result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "usage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "auth"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "confirmation_required, conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "internal"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "router"
+          }
+        },
+        "summary": "Show WireGuard VPN server configuration and status.",
+        "tags": [
+          "vpn"
+        ],
+        "x-tplinkctl-command": [
+          "tplinkctl",
+          "--json",
+          "--no-input",
+          "wireguard"
+        ],
+        "x-tplinkctl-input-schema": {
+          "$ref": "#/components/schemas/wireguard_statusInput"
+        },
+        "x-tplinkctl-plan-operation": null,
+        "x-tplinkctl-profile": [
+          "read-only",
+          "device-admin",
+          "network-admin",
+          "dangerous"
+        ],
+        "x-tplinkctl-read-only": true,
+        "x-tplinkctl-risk": "read_only",
+        "x-tplinkctl-rollback": {
+          "automatic": false,
+          "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+          "mode": "not_applicable"
+        }
+      }
+    },
+    "/v1/wifi": {
+      "get": {
+        "operationId": "wifi_info",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/wifi_infoOutput"
+                }
+              }
+            },
+            "description": "Plan or redacted command result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "usage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "auth"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "confirmation_required, conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "internal"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "router"
+          }
+        },
+        "summary": "Read Wi-Fi networks without secrets.",
+        "tags": [
+          "wifi"
+        ],
+        "x-tplinkctl-command": [
+          "tplinkctl",
+          "--json",
+          "--no-input",
+          "wifi-info"
+        ],
+        "x-tplinkctl-input-schema": {
+          "$ref": "#/components/schemas/wifi_infoInput"
+        },
+        "x-tplinkctl-plan-operation": null,
+        "x-tplinkctl-profile": [
+          "read-only",
+          "device-admin",
+          "network-admin",
+          "dangerous"
+        ],
+        "x-tplinkctl-read-only": true,
+        "x-tplinkctl-risk": "read_only",
+        "x-tplinkctl-rollback": {
+          "automatic": false,
+          "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+          "mode": "not_applicable"
+        }
+      }
+    },
+    "/v1/wifi/advanced": {
+      "get": {
+        "operationId": "wifi_advanced",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/wifi_advancedOutput"
+                }
+              }
+            },
+            "description": "Plan or redacted command result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "usage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "auth"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "confirmation_required, conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "internal"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "router"
+          }
+        },
+        "summary": "Show advanced Wi-Fi radio features: OFDMA, OFDMA MIMO, TWT, Smart Connect, DFS channels, radio schedule, and region.",
+        "tags": [
+          "wifi"
+        ],
+        "x-tplinkctl-command": [
+          "tplinkctl",
+          "--json",
+          "--no-input",
+          "wifi-advanced"
+        ],
+        "x-tplinkctl-input-schema": {
+          "$ref": "#/components/schemas/wifi_advancedInput"
+        },
+        "x-tplinkctl-plan-operation": null,
+        "x-tplinkctl-profile": [
+          "read-only",
+          "device-admin",
+          "network-admin",
+          "dangerous"
+        ],
+        "x-tplinkctl-read-only": true,
+        "x-tplinkctl-risk": "read_only",
+        "x-tplinkctl-rollback": {
+          "automatic": false,
+          "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+          "mode": "not_applicable"
+        }
+      }
+    },
+    "/v1/wifi/{connection}/configuration": {
+      "put": {
+        "operationId": "wifi_config",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection",
+            "required": true,
+            "schema": {
+              "enum": [
+                "host_2g",
+                "host_5g",
+                "host_6g",
+                "guest_2g",
+                "guest_5g",
+                "guest_6g",
+                "iot_2g",
+                "iot_5g",
+                "iot_6g",
+                "wired"
+              ],
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/wifi_configRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/wifi_configOutput"
+                }
+              }
+            },
+            "description": "Plan or redacted command result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "usage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "auth"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "confirmation_required, conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "internal"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "router"
+          }
+        },
+        "summary": "Configure Wi-Fi radio parameters (channel, channel width, txpower, SSID). Requires explicit confirmation.",
+        "tags": [
+          "wifi"
+        ],
+        "x-tplinkctl-command": [
+          "tplinkctl",
+          "--json",
+          "--no-input",
+          "wifi-config",
+          "<connection>",
+          "--yes"
+        ],
+        "x-tplinkctl-input-schema": {
+          "$ref": "#/components/schemas/wifi_configInput"
+        },
+        "x-tplinkctl-plan-operation": "wifi_config_plan",
+        "x-tplinkctl-profile": [
+          "network-admin",
+          "dangerous"
+        ],
+        "x-tplinkctl-read-only": false,
+        "x-tplinkctl-risk": "wifi_radio_configuration",
+        "x-tplinkctl-rollback": {
+          "automatic": false,
+          "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+          "mode": "manual"
+        }
+      }
+    },
+    "/v1/wifi/{connection}/plans": {
+      "post": {
+        "operationId": "wifi_config_plan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection",
+            "required": true,
+            "schema": {
+              "enum": [
+                "host_2g",
+                "host_5g",
+                "host_6g",
+                "guest_2g",
+                "guest_5g",
+                "guest_6g",
+                "iot_2g",
+                "iot_5g",
+                "iot_6g",
+                "wired"
+              ],
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/wifi_config_planRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/wifi_config_planOutput"
+                }
+              }
+            },
+            "description": "Plan or redacted command result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "usage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "auth"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "confirmation_required, conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "internal"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "router"
+          }
+        },
+        "summary": "Plan a Wi-Fi radio configuration change (channel, width, txpower, SSID) without changing router state.",
+        "tags": [
+          "wifi"
+        ],
+        "x-tplinkctl-command": [
+          "tplinkctl",
+          "--json",
+          "--no-input",
+          "wifi-config",
+          "<connection>",
+          "--plan"
+        ],
+        "x-tplinkctl-input-schema": {
+          "$ref": "#/components/schemas/wifi_config_planInput"
+        },
+        "x-tplinkctl-plan-operation": null,
+        "x-tplinkctl-profile": [
+          "network-admin",
+          "dangerous"
+        ],
+        "x-tplinkctl-read-only": true,
+        "x-tplinkctl-risk": "read_only",
+        "x-tplinkctl-rollback": {
+          "automatic": false,
+          "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+          "mode": "not_applicable"
+        }
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "servers": [
+    {
+      "description": "Default loopback listener",
+      "url": "http://127.0.0.1:8765"
+    }
+  ],
+  "x-tplinkctl-error-status": {
+    "auth": 401,
+    "confirmation_required": 409,
+    "conflict": 409,
+    "internal": 500,
+    "not_found": 404,
+    "permission": 403,
+    "router": 502,
+    "usage": 400
+  },
+  "x-tplinkctl-local-only": [
+    {
+      "command": [
+        "tplinkctl",
+        "--json",
+        "events",
+        "--tail",
+        "<limit>"
+      ],
+      "description": "Read recent local audit events from the append-only JSONL log.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "operation": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "tail": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "local_only": "Local audit records are not remotely readable.",
+      "name": "audit_tail",
+      "output_schema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "plan_operation": null,
+      "profiles": [
+        "read-only",
+        "device-admin",
+        "network-admin",
+        "dangerous"
+      ],
+      "read_only": true,
+      "risk": "read_only",
+      "rollback_contract": {
+        "automatic": false,
+        "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+        "mode": "not_applicable"
+      }
+    },
+    {
+      "command": [
+        "tplinkctl",
+        "--json",
+        "--no-input",
+        "state",
+        "save",
+        "--name",
+        "<name>"
+      ],
+      "description": "Save a redacted local router state snapshot.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "local_only": "Writes a local snapshot file, not router state.",
+      "name": "state_snapshot",
+      "output_schema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "plan_operation": null,
+      "profiles": [
+        "read-only",
+        "device-admin",
+        "network-admin",
+        "dangerous"
+      ],
+      "read_only": true,
+      "risk": "read_only",
+      "rollback_contract": {
+        "automatic": false,
+        "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+        "mode": "not_applicable"
+      }
+    },
+    {
+      "command": [
+        "tplinkctl",
+        "--json",
+        "state",
+        "diff"
+      ],
+      "description": "Diff two saved local state snapshots.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "after": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "before": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "ignore": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "only": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "raw": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "local_only": "Accepts local snapshot references; never expose filesystem selectors over HTTP.",
+      "name": "state_diff",
+      "output_schema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "plan_operation": null,
+      "profiles": [
+        "read-only",
+        "device-admin",
+        "network-admin",
+        "dangerous"
+      ],
+      "read_only": true,
+      "risk": "read_only",
+      "rollback_contract": {
+        "automatic": false,
+        "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+        "mode": "not_applicable"
+      }
+    },
+    {
+      "command": [
+        "tplinkctl",
+        "--json",
+        "--no-input",
+        "watch"
+      ],
+      "description": "Sample read-only router state repeatedly.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "count": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "interval": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "target": {
+            "enum": [
+              "status",
+              "devices",
+              "speed",
+              "health"
+            ],
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "top": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "local_only": "Repeated samples and streams belong to the local CLI/MCP lifecycle.",
+      "name": "watch",
+      "output_schema": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "plan_operation": null,
+      "profiles": [
+        "read-only",
+        "device-admin",
+        "network-admin",
+        "dangerous"
+      ],
+      "read_only": true,
+      "risk": "read_only",
+      "rollback_contract": {
+        "automatic": false,
+        "description": "Plan reports state-derived commands and limitations; never an automatic recovery guarantee.",
+        "mode": "not_applicable"
+      }
+    }
+  ]
+}

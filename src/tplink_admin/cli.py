@@ -486,6 +486,9 @@ def print_json(value: Any) -> None:
 
 def emit(args: argparse.Namespace, value: Any) -> None:
     audit_if_needed(args, value)
+    if sink := getattr(args, "_output_sink", None):
+        sink(to_plain(value))
+        return
     output = getattr(args, "output", None) or output_from_env()
     if output == "json":
         print_json(value)
@@ -1213,7 +1216,7 @@ def find_list_item(items: list[dict[str, Any]], query: str) -> tuple[int, dict[s
         name = str(item.get("hostname") or item.get("name") or "").lower()
         if needle and needle in name:
             return index, item
-    raise SystemExit(f"No list entry matched `{query}`.")
+    fail("not_found", f"No list entry matched `{query}`.")
 
 
 def device_access_payload(row: dict[str, Any]) -> dict[str, Any]:
@@ -1398,301 +1401,14 @@ def capability_manifest() -> dict[str, Any]:
 
 
 def tool_manifest() -> dict[str, Any]:
-    tools = [
-        {
-            "name": "router_status",
-            "description": "Return router, WAN, Wi-Fi, health, and connected device summary.",
-            "command": ["tplinkctl", "--json", "--no-input", "status"],
-            "read_only": True,
-            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
-        },
-        {
-            "name": "firmware_audit",
-            "description": "Check current firmware, update availability, and auto-update settings without installing anything.",
-            "command": ["tplinkctl", "--json", "--no-input", "firmware-check"],
-            "read_only": True,
-            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
-        },
-        {
-            "name": "led_status",
-            "description": "Return router LED and nightly LED-off schedule status.",
-            "command": ["tplinkctl", "--json", "--no-input", "led", "status"],
-            "read_only": True,
-            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
-        },
-        {
-            "name": "led_plan",
-            "description": "Plan a router LED or nightly schedule change without changing router state.",
-            "command": ["tplinkctl", "--json", "--no-input", "led", "<action>", "--plan"],
-            "read_only": True,
-            "input_schema": {
-                "type": "object",
-                "required": ["action"],
-                "properties": {
-                    "action": {"type": "string", "enum": ["on", "off", "schedule"]},
-                    "enabled": {"type": "boolean"},
-                    "start": {"type": "string", "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$"},
-                    "end": {"type": "string", "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$"},
-                },
-                "additionalProperties": False,
-            },
-        },
-        {
-            "name": "led_set",
-            "description": "Change router LEDs or the nightly LED-off schedule. Requires explicit confirmation and should be preceded by led_plan.",
-            "command": ["tplinkctl", "--json", "--no-input", "led", "<action>", "--yes"],
-            "read_only": False,
-            "risk": "physical_indicator_change",
-            "input_schema": {
-                "type": "object",
-                "required": ["action"],
-                "properties": {
-                    "action": {"type": "string", "enum": ["on", "off", "schedule"]},
-                    "enabled": {"type": "boolean"},
-                    "start": {"type": "string", "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$"},
-                    "end": {"type": "string", "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$"},
-                },
-                "additionalProperties": False,
-            },
-        },
-        {
-            "name": "device_list",
-            "description": "List connected devices with hostname, IP, MAC, speed, usage, and connection type.",
-            "command": ["tplinkctl", "--json", "--no-input", "devices"],
-            "read_only": True,
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "active": {"type": "boolean"},
-                    "sort": {"type": "string", "enum": ["name", "ip", "speed", "usage", "signal"]},
-                    "top": {"type": "integer", "minimum": 1},
-                },
-                "additionalProperties": False,
-            },
-        },
-        {
-            "name": "device_show",
-            "description": "Resolve one device by hostname substring, IP, or MAC address.",
-            "command": ["tplinkctl", "--json", "--no-input", "device", "<query>"],
-            "read_only": True,
-            "input_schema": {"type": "object", "required": ["query"], "properties": {"query": {"type": "string"}}, "additionalProperties": False},
-        },
-        {
-            "name": "device_plan",
-            "description": "Plan a device mutation without changing router state.",
-            "command": ["tplinkctl", "--json", "--no-input", "device", "<action>", "<query>", "--plan"],
-            "read_only": True,
-            "input_schema": {
-                "type": "object",
-                "required": ["action", "query"],
-                "properties": {
-                    "action": {"type": "string", "enum": ["reserve", "release", "block", "unblock"]},
-                    "query": {"type": "string"},
-                    "enforce": {"type": "boolean"},
-                },
-                "additionalProperties": False,
-            },
-        },
-        {
-            "name": "device_block",
-            "description": "Add a device to the access-control blacklist. Requires explicit confirmation and should be preceded by device_plan.",
-            "command": ["tplinkctl", "--json", "--no-input", "device", "block", "<query>", "--yes"],
-            "read_only": False,
-            "risk": "device_connectivity_loss",
-            "rollback": ["tplinkctl", "--json", "--no-input", "device", "unblock", "<query>", "--yes"],
-            "input_schema": {"type": "object", "required": ["query"], "properties": {"query": {"type": "string"}, "enforce": {"type": "boolean"}}, "additionalProperties": False},
-        },
-        {
-            "name": "device_unblock",
-            "description": "Remove a device from the access-control blacklist.",
-            "command": ["tplinkctl", "--json", "--no-input", "device", "unblock", "<query>", "--yes"],
-            "read_only": False,
-            "risk": "device_access_policy",
-            "input_schema": {"type": "object", "required": ["query"], "properties": {"query": {"type": "string"}}, "additionalProperties": False},
-        },
-        {
-            "name": "wifi_config_plan",
-            "description": "Plan a Wi-Fi radio configuration change (channel, width, txpower, SSID) without changing router state.",
-            "command": ["tplinkctl", "--json", "--no-input", "wifi-config", "<connection>", "--plan"],
-            "read_only": True,
-            "input_schema": {
-                "type": "object",
-                "required": ["connection"],
-                "properties": {
-                    "connection": {"type": "string", "enum": [item.value for item in Connection if item is not Connection.UNKNOWN]},
-                    "channel": {"type": "string"},
-                    "width": {"type": "string"},
-                    "txpower": {"type": "string", "enum": ["low", "middle", "high"]},
-                    "ssid": {"type": "string"},
-                },
-                "additionalProperties": False,
-            },
-        },
-        {
-            "name": "wifi_config",
-            "description": "Configure Wi-Fi radio parameters (channel, channel width, txpower, SSID). Requires explicit confirmation.",
-            "command": ["tplinkctl", "--json", "--no-input", "wifi-config", "<connection>", "--yes"],
-            "read_only": False,
-            "risk": "wifi_radio_configuration",
-            "rollback": ["Re-run wifi-config with previous radio settings."],
-            "input_schema": {
-                "type": "object",
-                "required": ["connection"],
-                "properties": {
-                    "connection": {"type": "string", "enum": [item.value for item in Connection if item is not Connection.UNKNOWN]},
-                    "channel": {"type": "string"},
-                    "width": {"type": "string"},
-                    "txpower": {"type": "string", "enum": ["low", "middle", "high"]},
-                    "ssid": {"type": "string"},
-                },
-                "additionalProperties": False,
-            },
-        },
-        {
-            "name": "doctor_deep",
-            "description": "Run read-only web, auth, and endpoint health probes.",
-            "command": ["tplinkctl", "--json", "--no-input", "doctor", "--deep"],
-            "read_only": True,
-            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
-        },
-        {
-            "name": "audit_tail",
-            "description": "Read recent local audit events from the append-only JSONL log.",
-            "command": ["tplinkctl", "--json", "events", "--tail", "<limit>"],
-            "read_only": True,
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "tail": {"type": "integer", "minimum": 1},
-                    "operation": {"type": "string"},
-                },
-                "additionalProperties": False,
-            },
-        },
-        {
-            "name": "state_snapshot",
-            "description": "Save a redacted local router state snapshot.",
-            "command": ["tplinkctl", "--json", "--no-input", "state", "save", "--name", "<name>"],
-            "read_only": True,
-            "input_schema": {"type": "object", "properties": {"name": {"type": "string"}}, "additionalProperties": False},
-        },
-        {
-            "name": "state_diff",
-            "description": "Diff two saved local state snapshots.",
-            "command": ["tplinkctl", "--json", "state", "diff"],
-            "read_only": True,
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "before": {"type": "string"},
-                    "after": {"type": "string"},
-                    "limit": {"type": "integer", "minimum": 1},
-                    "raw": {"type": "boolean"},
-                    "only": {"type": "string"},
-                    "ignore": {"type": "array", "items": {"type": "string"}},
-                },
-                "additionalProperties": False,
-            },
-        },
-        {
-            "name": "port_forward_list",
-            "description": "List NAT virtual servers and port forwarding rules.",
-            "command": ["tplinkctl", "--json", "--no-input", "port-forward"],
-            "read_only": True,
-            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
-        },
-        {
-            "name": "port_speed",
-            "description": "Show physical Ethernet port link speed negotiation and supported speeds.",
-            "command": ["tplinkctl", "--json", "--no-input", "ports"],
-            "read_only": True,
-            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
-        },
-        {
-            "name": "ipv6_status",
-            "description": "Show WAN and LAN IPv6 configuration and status.",
-            "command": ["tplinkctl", "--json", "--no-input", "ipv6"],
-            "read_only": True,
-            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
-        },
-        {
-            "name": "mesh_devices",
-            "description": "List EasyMesh network nodes, roles, and connected client counts.",
-            "command": ["tplinkctl", "--json", "--no-input", "mesh"],
-            "read_only": True,
-            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
-        },
-        {
-            "name": "wireguard_status",
-            "description": "Show WireGuard VPN server configuration and status.",
-            "command": ["tplinkctl", "--json", "--no-input", "wireguard"],
-            "read_only": True,
-            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
-        },
-        {
-            "name": "nat_status",
-            "description": "Show NAT ALG passthrough rules, DMZ status, and UPnP enablement.",
-            "command": ["tplinkctl", "--json", "--no-input", "nat"],
-            "read_only": True,
-            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
-        },
-        {
-            "name": "qos_status",
-            "description": "Show Quality of Service (QoS) enablement, bandwidth limits, and priority splits.",
-            "command": ["tplinkctl", "--json", "--no-input", "qos"],
-            "read_only": True,
-            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
-        },
-        {
-            "name": "storage_status",
-            "description": "Show attached USB storage disks, Samba/FTP folder sharing, and Apple Time Machine status.",
-            "command": ["tplinkctl", "--json", "--no-input", "storage"],
-            "read_only": True,
-            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
-        },
-        {
-            "name": "time_status",
-            "description": "Show router system date, time, timezone, and NTP server configuration.",
-            "command": ["tplinkctl", "--json", "--no-input", "time"],
-            "read_only": True,
-            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
-        },
-        {
-            "name": "power_status",
-            "description": "Show router eco/power mode, smart eco state, and scheduled power-saving rules.",
-            "command": ["tplinkctl", "--json", "--no-input", "power"],
-            "read_only": True,
-            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
-        },
-        {
-            "name": "wifi_advanced",
-            "description": "Show advanced Wi-Fi radio features: OFDMA, OFDMA MIMO, TWT, Smart Connect, DFS channels, radio schedule, and region.",
-            "command": ["tplinkctl", "--json", "--no-input", "wifi-advanced"],
-            "read_only": True,
-            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
-        },
-        {
-            "name": "ddns_status",
-            "description": "Show the configured dynamic DNS provider.",
-            "command": ["tplinkctl", "--json", "--no-input", "ddns"],
-            "read_only": True,
-            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
-        },
-        {
-            "name": "iptv_status",
-            "description": "Show IPTV/VLAN configuration, IGMP snooping, and LAN port assignments.",
-            "command": ["tplinkctl", "--json", "--no-input", "iptv"],
-            "read_only": True,
-            "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
-        },
-    ]
+    from .registry import tools
     return {
         "name": "tplinkctl-tools",
         "version": __version__,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "transport": "local-cli",
         "policy_hint": "Use --profile read-only, device-admin, network-admin, or dangerous to constrain execution.",
-        "tools": tools,
+        "tools": tools(),
     }
 
 
@@ -2006,15 +1722,24 @@ def build_router(args: argparse.Namespace):
     )
 
 
-def with_session(args: argparse.Namespace, action):
+@contextmanager
+def router_session(args: argparse.Namespace):
+    """Hold the router lock and authentication across a whole transaction."""
     args = apply_runtime_defaults(args)
     with session_lock(not args.no_lock):
         router = build_router(args)
         router.authorize()
         try:
-            return action(router)
+            yield router
         finally:
             router.logout()
+
+
+def with_session(args: argparse.Namespace, action):
+    if router := getattr(args, "_router_session", None):
+        return action(router)
+    with router_session(args) as router:
+        return action(router)
 
 
 def cmd_firmware(args: argparse.Namespace) -> None:
@@ -2300,6 +2025,8 @@ def cmd_device_block(args: argparse.Namespace) -> None:
                         "enabled": status["enabled"],
                         "mode": status["mode"],
                         "blacklist_count": len(status["blacklist"]),
+                        **({name: sorted(status[name], key=lambda item: json.dumps(item, sort_keys=True))
+                            for name in ("blacklist", "whitelist")} if args.enforce else {}),
                     },
                 },
                 changes=changes,
@@ -2319,8 +2046,10 @@ def cmd_device_block(args: argparse.Namespace) -> None:
             api_request(router, operation_path(ACCESS_CONTROL_MODE, "write"), form_payload(operation="write", access_mode="black"), ignore_response=True)
         status = access_control_status(router)
         refreshed_duplicate = contains_mac(status["blacklist"], row["mac"])
-        if not duplicate and not refreshed_duplicate:
-            raise SystemExit("Router did not confirm adding the device to the blacklist.")
+        if not refreshed_duplicate:
+            fail("router", "Router did not confirm adding the device to the blacklist.")
+        if args.enforce and (status["enabled"] is not True or status["mode"] != "black"):
+            fail("router", "Router did not confirm Access Control enforcement.")
         return {
             "blocked": True,
             "already_listed": duplicate is not None,
@@ -2631,8 +2360,10 @@ def cmd_led(args: argparse.Namespace) -> None:
             ignore_response=True,
         )
         updated = led_status(router)
-        if updated["schedule"]["enabled"] is not expected:
-            raise SystemExit(f"Router did not confirm LED schedule {on_off(expected)}; current status is {updated}.")
+        if (updated["schedule"]["enabled"] is not expected
+                or (start is not None and updated["schedule"]["start"] != start)
+                or (end is not None and updated["schedule"]["end"] != end)):
+            fail("router", "Router did not confirm the requested LED schedule.")
         return updated
 
     emit(args, with_session(args, action))
@@ -2725,6 +2456,10 @@ def cmd_wifi_config(args: argparse.Namespace) -> None:
         api_request(router, operation_path(path, "write"), payload_str)
 
         verified = to_plain(api_request(router, operation_path(path, "read"), "operation=read"))
+        requested = {"channel": args.channel, "htmode": args.width,
+                     "txpower": args.txpower, "ssid": args.ssid}
+        if any(str(verified.get(key)) != str(value) for key, value in requested.items() if value is not None):
+            fail("router", "Router did not confirm the requested Wi-Fi configuration.")
         return {
             "connection": connection.value,
             "configured": True,
@@ -3207,6 +2942,7 @@ def schema_document(command_path: list[str] | None = None) -> dict[str, Any]:
             {"name": "--disable-commands", "type": "string", "description": "Comma-separated command denylist."},
         ],
         "commands": commands,
+        "x-tplinkctl-tools": tool_manifest()["tools"],
         "errors": [{"kind": kind, **meta} for kind, meta in ERROR_CATALOG.items()],
         "output": {"tty": "text", "piped": "text"},
     }
@@ -3465,6 +3201,7 @@ def operation_id(args: argparse.Namespace) -> str:
         "vpn-client": "vpn.client_toggle",
         "vpn-client-status": "vpn.client_status",
         "vpn-status": "vpn.status",
+        "wireguard": "vpn.wireguard",
         "raw": "advanced.raw",
         "read": "advanced.read",
         "reboot": "router.reboot",

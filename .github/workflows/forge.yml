@@ -1,0 +1,45 @@
+name: Forge contract artifacts
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  forge:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install validation dependencies
+        run: python -m pip install '.[test]'
+      - name: Check registry artifact and schema
+        run: |
+          python -m tplink_admin.openapi --check docs/openapi.json
+          python scripts/forge_generate.py validate --spec docs/openapi.json
+      - name: Generate, compile and exercise real SDK
+        run: |
+          mkdir -p artifacts
+          python scripts/forge_generate.py generate --spec docs/openapi.json --output artifacts/sdk --report artifacts/forge-report.json
+      - name: Exercise failure cleanup and validation
+        run: python scripts/forge_test.py --docker-failure
+      - name: Upload finalized SDK, specification and safe evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tplinkctl-http-contract
+          path: |
+            artifacts/sdk/
+            artifacts/forge-report.json
+          if-no-files-found: warn
+          retention-days: 14
