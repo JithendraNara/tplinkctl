@@ -1,0 +1,32 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "Synthetic SDK probe", "version": "1.0.0"},
+  "servers": [{"url": "http://127.0.0.1:8787"}],
+  "paths": {
+    "/v1/router/status": {
+      "get": {
+        "operationId": "router_status",
+        "tags": ["router"],
+        "summary": "Read synthetic router status",
+        "x-tplinkctl-read-only": true,
+        "responses": {
+          "200": {
+            "description": "Synthetic status",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Status"}}}
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Status": {
+        "type": "object",
+        "required": ["data"],
+        "properties": {
+          "data": {"type": "object", "required": ["router", "wan", "wifi", "health"], "properties": {"router": {"type": "object"}, "wan": {"type": "object"}, "wifi": {"type": "object"}, "health": {"type": "object"}}}
+        }
+      }
+    }
+  }
+}

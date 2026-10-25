@@ -2,7 +2,18 @@
 
 ## [Unreleased]
 
+### Added
+
+- Authenticated `/v1` HTTP transport (`tplinkctl-api`), defaulting to loopback and a server-selected read-only profile. Shared registry metadata drives CLI/MCP/OpenAPI discovery; local filesystem and watch tools remain local-only.
+- Expiring, target/state-bound single-use HTTP plans for LED, Wi-Fi configuration and device block/unblock, with explicit confirmation, audit records and truthful manual rollback limits.
+- Deterministic OpenAPI 3.1.2 generation and cross-transport contract tests using a synthetic router behind a real HTTP listener.
+- Pinned Linux/Docker Cloudflare Forge generation, SDK-map validation, TypeScript compilation, authenticated generated-client smoke tests and safe CI artifacts.
+
 ### Fixed
+
+- Verify requested Wi-Fi fields, LED schedule times and Access Control enforcement before reporting mutation success. Reject global-enforcement plans when policy membership changes, even if counts match.
+- Redact nested HTTP diagnostic values, preserve semantic missing-list errors across transports and accept server-issued plan IDs beginning with a hyphen.
+- Map the read-only WireGuard command to its allowlisted operation identifier.
 
 - Preserve form-encoded SG VPN-controller requests instead of converting them to JSON. `vpn-client-status` now reads enablement, profiles and device access on BE3500 firmware 1.3.5; the previous `no such callback` diagnosis was a CLI encoding issue, not proof that VPN was disabled.
 - Correct VPN capability/endpoint notes and add regression coverage through the real SG encryption/request stack. VPN routing mutations remain experimental and were not exercised on the live router.

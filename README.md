@@ -192,6 +192,19 @@ mcp_servers:
 
 ---
 
+## HTTP API and generated SDK
+
+`tplinkctl-api` adds an authenticated `/v1` transport, defaulting to loopback and
+the read-only profile. Supply a separate `TPLINK_API_TOKEN` through the environment.
+Mutations require a server-issued, expiring, single-use plan plus explicit
+confirmation; CLI/MCP confirmation behavior remains unchanged.
+
+The shared tool registry emits `docs/openapi.json`. Local audit/watch/snapshot
+operations are explicitly excluded from HTTP. Linux CI runs pinned Cloudflare
+Forge, compiles its generated TypeScript and exercises a generated read method
+against a mock HTTP server. See [HTTP API](docs/HTTP_API.md) and
+[Forge tooling](docs/forge.md) for setup, boundaries and validation.
+
 ## The CLI Spec (clispec v0.2) & Exit Codes
 
 `tplinkctl` fully implements [The CLI Spec v0.2](https://clispec.dev/):

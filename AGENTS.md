@@ -193,6 +193,17 @@ tplinkctl --json --no-input watch devices --active --count 3 --interval 2
 tplinkctl --no-input watch speed --count 10 --interval 1 --stream
 ```
 
+## HTTP transport and publication privacy
+
+- `tplinkctl-api --help` documents the loopback listener, server-selected profile and explicit remote binding. `TPLINK_API_TOKEN` is a separate API credential; never echo it.
+- Metadata is defined in `registry.tools()` and reused by CLI tools/schema, MCP and OpenAPI. Run `python -m tplink_admin.openapi --check docs/openapi.json` after metadata edits.
+- HTTP mutations require an expiring, actor/profile/operation/target-bound single-use plan and `confirm=true`. Replan after drift, expiry, restart or uncertain failure; no automatic rollback is promised.
+- Watch, audit, snapshots and local state diffs have no HTTP routes. No raw router API or reboot is exposed.
+- Use `tests/http_router.py` for HTTP integration. Never perform live router mutations to test HTTP safety.
+- Treat live network labels, VPN/provider/location choices, device identifiers, domains, addresses and local paths as private environment data even if they are not secrets. Public fixtures must be synthetic; keep raw probes outside the repo.
+- Privacy-check outgoing commits, PR/issue text, reports and artifacts. Secret redaction alone does not make router responses public-safe. Do not upload raw audit or generator logs.
+- See `docs/HTTP_API.md`, `docs/forge.md` and ADR 002.
+
 ## Development Checks
 
 ```bash

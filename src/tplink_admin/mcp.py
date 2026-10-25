@@ -262,6 +262,9 @@ def argv_iptv(_: dict[str, Any]) -> list[str]:
 
 
 TOOL_BUILDERS: dict[str, Callable[[dict[str, Any]], list[str]]] = {
+    "wifi_info": lambda _: base_argv() + ["wifi-info"],
+    "vpn_status": lambda _: base_argv() + ["vpn-status"],
+    "vpn_client_status": lambda _: base_argv() + ["vpn-client-status"],
     "router_status": argv_status,
     "firmware_audit": argv_firmware_audit,
     "led_status": argv_led_status,
@@ -296,38 +299,13 @@ TOOL_BUILDERS: dict[str, Callable[[dict[str, Any]], list[str]]] = {
 
 
 def tool_definitions() -> list[dict[str, Any]]:
-    tools = []
-    for item in cli.tool_manifest()["tools"]:
-        tool = {
-            "name": item["name"],
-            "description": item["description"],
-            "inputSchema": item["input_schema"],
-        }
-        if item["name"] in {"device_block", "device_unblock", "led_set", "wifi_config"}:
-            tool["inputSchema"] = dict(tool["inputSchema"])
-            properties = dict(tool["inputSchema"].get("properties", {}))
-            properties["confirm"] = {"type": "boolean", "description": "Must be true to execute the mutation."}
-            tool["inputSchema"]["properties"] = properties
-            tool["inputSchema"]["required"] = sorted(set(tool["inputSchema"].get("required", [])) | {"confirm"})
-        tools.append(tool)
-    tools.append(
-        {
-            "name": "watch",
-            "description": "Sample read-only router state repeatedly.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "target": {"type": "string", "enum": ["status", "devices", "speed", "health"]},
-                    "count": {"type": "integer", "minimum": 1},
-                    "interval": {"type": "number", "minimum": 0},
-                    "active": {"type": "boolean"},
-                    "top": {"type": "integer", "minimum": 1},
-                },
-                "additionalProperties": False,
-            },
-        }
-    )
-    return tools
+    return [{
+        "name": item["name"], "description": item["description"],
+        "inputSchema": item["input_schema"],
+        "annotations": {"readOnlyHint": item["read_only"], "destructiveHint": not item["read_only"]},
+        "_meta": {"tplinkctl": {key: item[key] for key in (
+            "risk", "profiles", "plan_operation", "rollback_contract", "local_only", "output_schema")}},
+    } for item in cli.tool_manifest()["tools"]]
 
 
 def run_cli_json(argv: list[str]) -> str:
@@ -336,6 +314,8 @@ def run_cli_json(argv: list[str]) -> str:
     with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
         try:
             cli.main(argv)
+        except cli.CliError:
+            raise
         except SystemExit as exc:
             detail = stderr.getvalue().strip() or str(exc)
             raise RuntimeError(detail) from exc
@@ -379,6 +359,11 @@ def handle_request(message: dict[str, Any]) -> dict[str, Any] | None:
     if method == "tools/call":
         try:
             result = call_tool(str(params.get("name", "")), params.get("arguments") or {})
+        except cli.CliError as exc:
+            # Preserve the machine-readable kind without returning arbitrary
+            # upstream exception strings or details that may contain secrets.
+            payload = {"error": {"kind": exc.kind, "message": cli.ERROR_CATALOG[exc.kind]["description"]}}
+            result = {"content": [{"type": "text", "text": json.dumps(payload)}], "isError": True}
         except Exception as exc:
             result = {"content": [{"type": "text", "text": f"{type(exc).__name__}: {exc}"}], "isError": True}
         return {"jsonrpc": "2.0", "id": request_id, "result": result}
