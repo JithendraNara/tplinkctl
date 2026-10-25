@@ -116,7 +116,9 @@ Known risky or experimental:
 - `router.led.set`: requires `--yes`; use `--plan` first and verify after changing state or schedule.
 - `wifi.toggle`: can disconnect agents if they are on that network.
 - `advanced.raw`: escape hatch for endpoint experiments.
-- `device.vpn`: currently marked `firmware_error` on the tested BE3500 firmware.
+- `vpn.client_status`: live-verified read on BE3500 firmware 1.3.5; use `vpn-client-status` for client enablement, profile connections, and device access. A device bypassing VPN does not prove the client is disabled.
+- `device.vpn`: experimental. Device-list reads work; routing mutations have not been live revalidated.
+- SG VPN requests use URL-encoded plaintext inside encryption, not JSON. See `docs/adr/001-vpn-client-form-encoding.md`; do not diagnose a firmware defect from `no such callback` without checking request encoding.
 
 ## Output Contract
 

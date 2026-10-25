@@ -652,9 +652,9 @@ class CliTests(unittest.TestCase):
         led_status = next(item for item in data["capabilities"] if item["id"] == "router.led.status")
         vpn_client_status = next(item for item in data["capabilities"] if item["id"] == "vpn.client_status")
         self.assertEqual(device_block["requires_confirmation"], "--yes")
-        self.assertEqual(device_vpn["status"], "firmware_error")
+        self.assertEqual(device_vpn["status"], "experimental")
         self.assertEqual(led_status["status"], "live_verified")
-        self.assertEqual(vpn_client_status["status"], "firmware_error")
+        self.assertEqual(vpn_client_status["status"], "live_verified")
         self.assertIn("--json", data["agent_contract"]["prefer"])
 
     def test_tools_reports_agent_tool_schemas(self):

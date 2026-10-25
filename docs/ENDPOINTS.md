@@ -97,7 +97,10 @@ tplinkctl device Pixel release --yes   # alternate postfix style
 ### VPN
 
 - `tplinkctl vpn-status` — works (reports OpenVPN/PPTP state)
-- `tplinkctl device Pixel vpn on --yes` — fails with Lua error: `bad argument #1 to 'find' (string expected, got nil)` on `/admin/vpn?form=vpn_user_list`. Router firmware bug, not fixable via CLI.
+- `tplinkctl --json vpn-client-status` — live-verified on BE3500 firmware 1.3.5: enablement, configured profiles/connection states and device access.
+- `/admin/vpn?form=enable` (`operation=read`), `form=server` (`operation=load` / `load_basic`) and `form=vpn_user_list` (`operation=load`) consume URL-encoded plaintext inside the encrypted SG request, **not JSON**. The previous JSON normalizer caused `no such callback` and misleading dispatcher failures.
+- `tplinkctl device Pixel vpn on --yes` remains experimental: reads are fixed, but routing mutations were not live revalidated. No VPN configuration was changed during verification.
+- Do not interpret a failed API read, or one device exiting via its ISP, as global VPN-client disablement. See [ADR 001](adr/001-vpn-client-form-encoding.md).
 
 ## Internet Advanced Page
 
