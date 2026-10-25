@@ -38,7 +38,11 @@ try:
         _orig_sg_request = TplinkRouterSG.request
 
         def _safe_sg_request(self, path: str, data: str, ignore_response: bool = False, ignore_errors: bool = False):
-            if isinstance(data, str) and "=" in data and not data.strip().startswith("{"):
+            # Preserve the VPN controller's URL-encoded plaintext; leave the
+            # CLI's existing non-VPN JSON workaround unchanged. Converting VPN
+            # forms to JSON causes misleading callback/dispatcher errors.
+            is_vpn_controller = path.split("?", 1)[0].strip("/") == "admin/vpn"
+            if not is_vpn_controller and isinstance(data, str) and "=" in data and not data.strip().startswith("{"):
                 parsed = dict(parse_qsl(data))
                 data = json.dumps(parsed)
             return _orig_sg_request(self, path, data, ignore_response=ignore_response, ignore_errors=ignore_errors)
@@ -311,16 +315,13 @@ KNOWN_QUIRKS = [
             "Archer BE3500 firmware 1.1.3 Build 20251120",
             "Archer BE3500 firmware 1.3.3 Build 20260618",
         ],
-        "summary": "The live router returns a Lua dispatcher error for admin/vpn?form=vpn_user_list on this firmware.",
+        "summary": "Historical Lua dispatcher failure; older firmware has not been retested. Form-encoded reads work on firmware 1.3.5; device-routing mutations remain unverified.",
         "affects": ["device.vpn"],
     },
     {
-        "id": "vpn-client-status-response-error",
-        "applies_to": [
-            "Archer BE3500 firmware 1.1.3 Build 20251120",
-            "Archer BE3500 firmware 1.3.3 Build 20260618",
-        ],
-        "summary": "The live router returns an unreadable response for the VPN client status endpoint on this firmware.",
+        "id": "sg-vpn-form-encoding",
+        "applies_to": ["Archer BE3500 firmware 1.3.5 Build 20260812"],
+        "summary": "VPN client reads must preserve URL-encoded plaintext before SG encryption. JSON conversion caused misleading API errors; fixed and live-verified on firmware 1.3.5. Earlier firmware has not been retested.",
         "affects": ["vpn.client_status"],
     },
 ]
@@ -365,10 +366,10 @@ CAPABILITIES = [
     {"id": "device.release", "command": "device release <query> --yes", "type": "mutation", "requires_auth": True, "requires_confirmation": "--yes", "risk": "dhcp_reservation", "rollback": "device reserve <query> --yes", "status": "live_verified"},
     {"id": "device.block", "command": "device block <query> --yes [--enforce]", "type": "mutation", "requires_auth": True, "requires_confirmation": "--yes", "risk": "device_connectivity_loss", "rollback": "device unblock <query> --yes", "status": "live_verified"},
     {"id": "device.unblock", "command": "device unblock <query> --yes", "type": "mutation", "requires_auth": True, "requires_confirmation": "--yes", "risk": "device_access_policy", "rollback": "device block <query> --yes", "status": "live_verified"},
-    {"id": "device.vpn", "command": "device vpn <query> <on|off> --yes", "type": "mutation", "requires_auth": True, "requires_confirmation": "--yes", "risk": "routing_change", "status": "firmware_error", "note": "Known to fail on the tested Archer BE3500 firmware."},
+    {"id": "device.vpn", "command": "device vpn <query> <on|off> --yes", "type": "mutation", "requires_auth": True, "requires_confirmation": "--yes", "risk": "routing_change", "status": "experimental", "note": "VPN device-list reads work on firmware 1.3.5; routing mutations have not been live revalidated."},
     {"id": "vpn.status", "command": "vpn-status", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "supported"},
     {"id": "vpn.wireguard", "command": "wireguard", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "live_verified"},
-    {"id": "vpn.client_status", "command": "vpn-client-status", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "firmware_error", "note": "Known to fail on the tested Archer BE3500 firmware."},
+    {"id": "vpn.client_status", "command": "vpn-client-status", "type": "read", "requires_auth": True, "output": ["json", "plain"], "status": "live_verified", "note": "Form-encoded reads verified on Archer BE3500 firmware 1.3.5; reports enablement, profiles and device access, not end-to-end tunnel egress."},
     {"id": "vpn.client_toggle", "command": "vpn-client <on|off>", "type": "mutation", "requires_auth": True, "risk": "routing_change", "status": "supported"},
     {"id": "router.reboot", "command": "reboot --yes", "type": "mutation", "requires_auth": True, "requires_confirmation": "--yes", "risk": "router_reboot", "status": "supported"},
     {"id": "discovery.routes", "command": "routes", "type": "local_discovery", "requires_auth": False, "output": ["json", "plain"], "status": "supported"},
@@ -950,7 +951,11 @@ def api_request(
     ignore_response: bool = False,
     ignore_errors: bool = False,
 ) -> Any:
-    if not all(hasattr(router, name) for name in ("_aes_encrypt", "_aes_decrypt", "_build_request_signature")):
+    # Preserve the VPN controller's form body through both request paths:
+    # upstream status uses router.request; doctor/raw/device use api_request.
+    if path.split("?", 1)[0].strip("/") == "admin/vpn" or not all(
+        hasattr(router, name) for name in ("_aes_encrypt", "_aes_decrypt", "_build_request_signature")
+    ):
         return router.request(path, data, ignore_response=ignore_response, ignore_errors=ignore_errors)
 
     if isinstance(data, str) and "=" in data:
@@ -2374,7 +2379,7 @@ def cmd_device_vpn(args: argparse.Namespace) -> None:
                 changes=[f"turn VPN client routing {on_off(args.enabled)} for {row['mac']}"],
                 risk="routing_change",
                 rollback=["tplinkctl", "device", "vpn", row["mac"], on_off(not args.enabled), "--yes"],
-                notes=["Known firmware error on the tested Archer BE3500 for the VPN user-list endpoint."],
+                notes=["VPN device-list reads are verified on firmware 1.3.5; routing mutations have not been live revalidated."],
             )
         devices = load_collection(router, "admin/vpn?form=vpn_user_list")
         target = next((item for item in devices if normalize_mac(str(item.get("mac") or "")) == normalize_mac(row["mac"])), None)

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserve form-encoded SG VPN-controller requests instead of converting them to JSON. `vpn-client-status` now reads enablement, profiles and device access on BE3500 firmware 1.3.5; the previous `no such callback` diagnosis was a CLI encoding issue, not proof that VPN was disabled.
+- Correct VPN capability/endpoint notes and add regression coverage through the real SG encryption/request stack. VPN routing mutations remain experimental and were not exercised on the live router.
+- Pin `tplinkrouterc6u` to live-tested 5.30.0. Fresh installs previously resolved 5.37.0, whose new form reconciler corrupts the existing SG JSON adapter's payloads. Upgrading requires a separate transport compatibility audit rather than silently changing the wire protocol.
+
 ## v0.5.3 - 2026-09-16
 
 ### Fixed

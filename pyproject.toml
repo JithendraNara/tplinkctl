@@ -18,7 +18,9 @@ classifiers = [
 ]
 dependencies = [
   "requests>=2.33.1",
-  "tplinkrouterc6u>=5.30.0",
+  # SG transport adapters are verified against this SDK's wire behavior.
+  # 5.37.0 rewrites JSON payloads as forms; see ADR 001 before upgrading.
+  "tplinkrouterc6u==5.30.0",
 ]
 
 [project.urls]
