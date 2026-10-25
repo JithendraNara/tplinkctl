@@ -348,6 +348,10 @@ def error_result(exc: BaseException) -> tuple[int, dict]:
     elif isinstance(exc, cli.CliError):
         kind = exc.kind
         message = cli.ERROR_CATALOG[kind]["description"]
+        if kind == "auth":
+            # API authentication already succeeded. A router credential failure
+            # must not challenge the caller to replace a valid bearer token.
+            return 502, {"error": {"kind": kind, "message": message}}
     elif isinstance(exc, SystemExit):
         kind, message = "router", "Command could not complete; inspect router state before retrying"
     else:

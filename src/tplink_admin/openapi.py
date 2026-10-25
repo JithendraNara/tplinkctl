@@ -75,6 +75,7 @@ def document() -> dict:
         "components": {"securitySchemes": {"bearerAuth": {"type": "http", "scheme": "bearer"}}, "schemas": schemas},
         "x-tplinkctl-local-only": local,
         "x-tplinkctl-error-status": registry.ERROR_STATUS,
+        "x-tplinkctl-upstream-error-status": {"auth": 502},
     }
 
 

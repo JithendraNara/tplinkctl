@@ -83,6 +83,13 @@ The repaired suite passed 114 Python tests on macOS and Linux; the Linux
 installed-package startup and wheel build also passed. Exact-head CI remains a
 publication closeout gate.
 
+A subsequent hosted review identified a separate authentication-boundary defect:
+missing server-side router credentials challenged a valid API bearer with 401.
+The actual missing-password path was reproduced in a failing HTTP test. Router
+credential errors now retain semantic `auth` but return 502 without a Bearer
+challenge; invalid caller credentials remain 401. OpenAPI explicitly documents
+this upstream-status override. The regression verifies no SDK construction occurs.
+
 ## Constraints
 
 Plans disappear on restart. Router firmware and independent admin/UI users are

@@ -29,6 +29,7 @@ class HttpTests(unittest.TestCase):
             "TPLINK_ENABLE_COMMANDS": "", "TPLINK_DISABLE_COMMANDS": "", "TPLINK_PASSWORD": "",
         }))
         self.router = Router()
+        self.real_build_router = cli.build_router
         self.stack.enter_context(patch.object(cli, "build_router", return_value=self.router))
         self.stack.enter_context(patch.object(cli.requests, "get", return_value=WebResponse()))
         self.tokens = {name: secrets.token_urlsafe(32) for name in ("admin", "other", "reader", "device")}
@@ -295,6 +296,23 @@ class HttpTests(unittest.TestCase):
         self.assertTrue(response["result"]["isError"])
         self.assertEqual(json.loads(response["result"]["content"][0]["text"])["error"]["kind"], "not_found")
 
+    def test_upstream_auth_does_not_challenge_valid_bearer(self):
+        # Exercise the real CLI's missing-password guard, not a fabricated
+        # error from HTTP. The SDK constructor must never run.
+        with patch.object(cli, "build_router", wraps=self.real_build_router), patch.object(cli, "TplinkRouterSG") as sdk:
+            connection = http.client.HTTPConnection(*self.server.server_address, timeout=10)
+            try:
+                connection.request("GET", "/v1/router/led", headers={"Authorization": "Bearer " + self.tokens["reader"]})
+                response = connection.getresponse()
+                result = json.loads(response.read())
+                self.assertEqual(response.status, 502, result)
+                self.assertEqual(result["error"]["kind"], "auth")
+                self.assertIsNone(response.getheader("WWW-Authenticate"))
+            finally:
+                connection.close()
+            sdk.assert_not_called()
+        self.assertEqual(self.request("GET", "/v1/router/led", headers={"Authorization": ""})[0], 401)
+
     def test_bind_defaults_and_profile_startup(self):
         with self.assertRaises(ValueError):
             api.create_server(self.app, "0.0.0.0", 0)
@@ -361,6 +379,7 @@ class ContractTests(unittest.TestCase):
                     self.assertIn(item["plan_operation"], operations)
                     self.assertFalse(operation["x-tplinkctl-rollback"]["automatic"])
         self.assertEqual(doc["x-tplinkctl-error-status"], registry.ERROR_STATUS)
+        self.assertEqual(doc["x-tplinkctl-upstream-error-status"], {"auth": 502})
         self.assertEqual(set(registry.ERROR_STATUS), set(cli.ERROR_CATALOG))
 
 

@@ -106,7 +106,10 @@ are not uploaded as CI artifacts.
 
 The response body preserves `error.kind`: usage 400, authentication 401,
 permission 403, not-found 404, confirmation/plan conflict 409, router/upstream
-502, and internal 500. Untrusted router exception text is not returned.
+502, and internal 500. Authentication 401 is reserved for the API bearer boundary.
+Server-side router credential failures preserve kind `auth` but return 502 without
+a `WWW-Authenticate` challenge, as documented by
+`x-tplinkctl-upstream-error-status`. Untrusted router exception text is not returned.
 
 ## Verification and references
 
