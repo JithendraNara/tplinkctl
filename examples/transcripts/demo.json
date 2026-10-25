@@ -1,20 +1,114 @@
 {
-  "generated_at": "2026-05-02T00:00:00+00:00",
+  "capability_sample": [
+    {
+      "command": "capabilities",
+      "id": "agent.capabilities",
+      "output": [
+        "json",
+        "plain"
+      ],
+      "requires_auth": false,
+      "status": "supported",
+      "type": "agent_discovery"
+    },
+    {
+      "command": "schema",
+      "id": "agent.schema",
+      "note": "clispec v0.2 machine-readable CLI contract. Offline, no auth.",
+      "output": [
+        "json"
+      ],
+      "requires_auth": false,
+      "status": "supported",
+      "type": "agent_discovery"
+    },
+    {
+      "command": "demo [--live]",
+      "id": "agent.demo",
+      "output": [
+        "json",
+        "plain"
+      ],
+      "requires_auth": "live only",
+      "status": "supported",
+      "type": "demo_report"
+    },
+    {
+      "command": "events",
+      "id": "agent.events",
+      "output": [
+        "json",
+        "plain"
+      ],
+      "requires_auth": false,
+      "status": "supported",
+      "type": "audit_read"
+    },
+    {
+      "command": "state <save|show|diff>",
+      "id": "agent.state",
+      "output": [
+        "json",
+        "plain"
+      ],
+      "requires_auth": "save only",
+      "status": "supported",
+      "type": "local_state"
+    },
+    {
+      "command": "tools",
+      "id": "agent.tools",
+      "output": [
+        "json",
+        "plain"
+      ],
+      "requires_auth": false,
+      "status": "supported",
+      "type": "agent_discovery"
+    },
+    {
+      "command": "watch <status|devices|speed|health>",
+      "id": "agent.watch",
+      "output": [
+        "json",
+        "jsonl",
+        "plain"
+      ],
+      "requires_auth": true,
+      "status": "supported",
+      "type": "read_monitor"
+    },
+    {
+      "command": "firmware",
+      "id": "router.firmware",
+      "output": [
+        "json",
+        "plain"
+      ],
+      "requires_auth": true,
+      "status": "supported",
+      "type": "read"
+    }
+  ],
+  "commands": [
+    "tplinkctl --json capabilities",
+    "tplinkctl --json tools",
+    "tplinkctl --json --no-input doctor --deep",
+    "tplinkctl --json --no-input state save --name before-change",
+    "tplinkctl --json --no-input devices --active",
+    "tplinkctl --json --reason 'demo plan' --no-input device block <device> --plan --enforce",
+    "tplinkctl --json events --tail 20"
+  ],
+  "docs": [
+    "README.md",
+    "AGENTS.md",
+    "llms.txt",
+    "examples/agent-runbook.md"
+  ],
+  "generated_at": "2026-10-25T00:00:00+00:00",
   "live": false,
+  "live_note": "Run `tplinkctl --json --no-input demo --live --device <name>` for live read-only router checks.",
   "name": "tplinkctl agent demo",
-  "summary": {
-    "audit_log": "~/.config/tplink-admin/events.jsonl",
-    "capabilities": 35,
-    "mcp_server": "tplinkctl-mcp",
-    "profiles": [
-      "dangerous",
-      "device-admin",
-      "network-admin",
-      "read-only"
-    ],
-    "state_dir": "~/.config/tplink-admin/state",
-    "tools": 14
-  },
   "safe_workflow": [
     "discover capabilities",
     "inspect tools",
@@ -24,6 +118,19 @@
     "plan device mutation with rollback",
     "inspect audit log"
   ],
+  "summary": {
+    "audit_log": "~/.config/tplink-admin/events.jsonl",
+    "capabilities": 50,
+    "mcp_server": "tplinkctl-mcp",
+    "profiles": [
+      "dangerous",
+      "device-admin",
+      "network-admin",
+      "read-only"
+    ],
+    "state_dir": "~/.config/tplink-admin/state",
+    "tools": 33
+  },
   "tool_names": [
     "router_status",
     "firmware_audit",
@@ -35,9 +142,28 @@
     "device_plan",
     "device_block",
     "device_unblock",
+    "wifi_config_plan",
+    "wifi_config",
     "doctor_deep",
     "audit_tail",
     "state_snapshot",
-    "state_diff"
+    "state_diff",
+    "port_forward_list",
+    "port_speed",
+    "ipv6_status",
+    "mesh_devices",
+    "wireguard_status",
+    "nat_status",
+    "qos_status",
+    "storage_status",
+    "time_status",
+    "power_status",
+    "wifi_advanced",
+    "ddns_status",
+    "iptv_status",
+    "wifi_info",
+    "vpn_status",
+    "vpn_client_status",
+    "watch"
   ]
 }

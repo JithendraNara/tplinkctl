@@ -1647,7 +1647,7 @@
   "info": {
     "description": "Bearer-authenticated, server-profile-controlled router resources. Mutations require a single-use plan_id plus confirm=true. Plans expire after 120 seconds by default and are invalid after restart. Plans bind actor, profile, operation, arguments and target. Changed router state requires replanning. No automatic rollback or exactly-once delivery guarantee after an upstream failure. Non-loopback exposure requires an explicit bind and a trusted TLS proxy or encrypted tunnel.",
     "title": "tplinkctl local API",
-    "version": "0.5.3"
+    "version": "0.6.0"
   },
   "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
   "openapi": "3.1.2",

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## v0.6.0 - 2026-10-25
+
 ### Added
 
 - Authenticated `/v1` HTTP transport (`tplinkctl-api`), defaulting to loopback and a server-selected read-only profile. Shared registry metadata drives CLI/MCP/OpenAPI discovery; local filesystem and watch tools remain local-only.
@@ -13,6 +15,10 @@
 
 - Verify requested Wi-Fi fields, LED schedule times and Access Control enforcement before reporting mutation success. Reject global-enforcement plans when policy membership changes, even if counts match.
 - Redact nested HTTP diagnostic values, preserve semantic missing-list errors across transports and accept server-issued plan IDs beginning with a hyphen.
+- Return upstream router authentication failures as HTTP 502 without challenging a valid API bearer; caller authentication failures remain 401.
+- Align requirements-file installs with the runtime dependency contract and include docs, fixtures and contract tooling in source distributions.
+- Refresh installation, MCP/HTTP discovery and VPN troubleshooting documentation; clarify that CLI/MCP profiles are opt-in, unlike HTTP’s read-only default.
+- Replace legacy key material and identifying network fixtures with explicitly synthetic test data. This does not remove prior Git history.
 - Map the read-only WireGuard command to its allowlisted operation identifier.
 
 - Preserve form-encoded SG VPN-controller requests instead of converting them to JSON. `vpn-client-status` now reads enablement, profiles and device access on BE3500 firmware 1.3.5; the previous `no such callback` diagnosis was a CLI encoding issue, not proof that VPN was disabled.

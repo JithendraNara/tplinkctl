@@ -120,7 +120,7 @@ The `internetAdv` bundle references:
 | --- | --- | --- |
 | `/admin/network?form=port_speed_current` | read, write in body | Port speed current value |
 | `/admin/network?form=port_speed_supported` | read in body | Supported port speeds |
-| `/admin/network?form=wan_fc` | `operation=read` in **path** | WAN flow control — only working write endpoint |
+| `/admin/network?form=wan_fc` | `operation=read` in **path** | WAN flow control — read verified; write effect not verified |
 
 ## Operation Placement Matters
 

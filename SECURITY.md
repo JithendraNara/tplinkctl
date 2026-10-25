@@ -19,6 +19,13 @@
 - Use `--reason` on plans and mutations so audit events explain why a change happened.
 - Inspect `tplinkctl events --tail 20` after any mutation.
 
+## HTTP Boundary
+
+- `tplinkctl-api` defaults to loopback and a read-only server profile. Use a separate random `TPLINK_API_TOKEN`; never reuse router credentials.
+- HTTP mutations require an expiring, state-bound, single-use plan plus explicit confirmation. A failed response may follow a partial router change; inspect state and replan rather than blindly retrying.
+- CLI/MCP confirmation rules are unchanged; their plan previews are not the HTTP single-use authorization mechanism.
+- Public reports must use synthetic network labels, device identifiers and addresses. Redacted operational responses can still identify a private environment.
+
 ## What To Report
 
 Please open a private security report or contact the maintainer before public disclosure if you find:

@@ -6,7 +6,7 @@ This repo is intentionally small and tool-shaped.
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install .
+.venv/bin/python -m pip install -e '.[test]'
 make test
 make smoke
 ```

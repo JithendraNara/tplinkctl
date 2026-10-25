@@ -51,9 +51,9 @@ class FakeRouter:
 
     def get_status(self):
         return {
-            "_wan_ipv4_addr": "10.0.0.17",
-            "_wan_ipv4_gateway": "10.0.0.1",
-            "_lan_ipv4_addr": "192.168.0.1",
+            "_wan_ipv4_addr": "198.51.100.17",
+            "_wan_ipv4_gateway": "198.51.100.1",
+            "_lan_ipv4_addr": "192.0.2.1",
             "cpu_usage": 0.16,
             "mem_usage": 0.47,
             "clients_total": 1,
@@ -72,9 +72,9 @@ class FakeRouter:
             "iot_6g_enable": None,
             "devices": [
                 {
-                    "hostname": "debian_linux",
-                    "_ipaddr": "192.168.0.79",
-                    "_macaddr": "48-BA-4E-40-B4-F4",
+                    "hostname": "fixture-device",
+                    "_ipaddr": "192.0.2.79",
+                    "_macaddr": "02-00-00-00-00-01",
                     "active": True,
                     "down_speed": 1024,
                     "type": "wired",
@@ -86,15 +86,15 @@ class FakeRouter:
 
     def get_ipv4_status(self):
         return {
-            "_wan_ipv4_ipaddr": "10.0.0.17",
-            "_wan_ipv4_gateway": "10.0.0.1",
+            "_wan_ipv4_ipaddr": "198.51.100.17",
+            "_wan_ipv4_gateway": "198.51.100.1",
             "_wan_ipv4_netmask": "255.255.255.0",
-            "_wan_ipv4_pridns": "10.0.0.1",
+            "_wan_ipv4_pridns": "198.51.100.1",
             "_wan_ipv4_snddns": "8.8.8.8",
         }
 
     def get_ipv4_dhcp_leases(self):
-        return [{"hostname": "debian_linux", "_ipaddr": "192.168.0.79"}]
+        return [{"hostname": "fixture-device", "_ipaddr": "192.0.2.79"}]
 
     def get_ipv4_reservations(self):
         return []
@@ -115,9 +115,9 @@ class FakeRouter:
                 self.reservations.append(
                     {
                         "key": "reservation-1",
-                        "hostname": "debian_linux",
-                        "ip": "192.168.0.79",
-                        "mac": "48-BA-4E-40-B4-F4",
+                        "hostname": "fixture-device",
+                        "ip": "192.0.2.79",
+                        "mac": "02-00-00-00-00-01",
                         "enable": "on",
                     }
                 )
@@ -144,9 +144,9 @@ class FakeRouter:
                 self.blacklist.append(
                     {
                         "key": "block-1",
-                        "name": "debian_linux",
-                        "ipaddr": "192.168.0.79",
-                        "mac": "48-BA-4E-40-B4-F4",
+                        "name": "fixture-device",
+                        "ipaddr": "192.0.2.79",
+                        "mac": "02-00-00-00-00-01",
                     }
                 )
                 return None if kwargs.get("ignore_response") else {}
@@ -161,10 +161,10 @@ class FakeRouter:
                 return {
                     "data": [
                         {
-                            "name": "debian_linux",
+                            "name": "fixture-device",
                             "type": "Computer",
-                            "mac": "48-BA-4E-40-B4-F4",
-                            "ipaddr": "192.168.0.79",
+                            "mac": "02-00-00-00-00-01",
+                            "ipaddr": "192.0.2.79",
                             "host": "NON_HOST",
                             "conn_type": "wired",
                         }
@@ -202,11 +202,11 @@ class FakeRouter:
             return {"enable": "on", "time": "03:00"}
         if base_path == "admin/vpn?form=vpn_user_list":
             if data == "operation=load":
-                return {"data": [{"name": "debian_linux", "mac": "48-BA-4E-40-B4-F4", "access": self.vpn_access}]}
+                return {"data": [{"name": "fixture-device", "mac": "02-00-00-00-00-01", "access": self.vpn_access}]}
             if "operation=update" in data:
                 enabled = "access%22%3A+%22on" in data or "access%22%3A%22on" in data
                 self.vpn_access = "on" if enabled else "off"
-                self.vpn_devices.append(("48-BA-4E-40-B4-F4", enabled))
+                self.vpn_devices.append(("02-00-00-00-00-01", enabled))
                 return None if kwargs.get("ignore_response") else {}
         if base_path == "admin/wireless?form=smart_connect":
             return {"smart_enable": "on"}
@@ -228,7 +228,7 @@ class FakeRouter:
                 "current_channel": getattr(self, "wifi_channel", "48"),
                 "htmode": getattr(self, "wifi_htmode", "160"),
                 "txpower": getattr(self, "wifi_txpower", "high"),
-                "ssid": getattr(self, "wifi_ssid", "ps"),
+                "ssid": getattr(self, "wifi_ssid", "fixture-wifi"),
                 "wireless_2g_enable": "on",
                 "wireless_2g_ssid": "lab",
                 "wireless_2g_current_channel": "3",
@@ -241,10 +241,10 @@ class FakeRouter:
         if base_path == cli.PORT_FORWARDING:
             return [
                 {
-                    "name": "NPM-HTTPS",
+                    "name": "fixture-https",
                     "internal_port": "8443",
                     "external_port": "443",
-                    "ipaddr": "192.168.0.72",
+                    "ipaddr": "192.0.2.72",
                     "protocol": "TCP",
                     "enable": "on",
                 }
@@ -256,33 +256,33 @@ class FakeRouter:
         if base_path == cli.NETWORK_STATUS_IPV6:
             return {
                 "wan_ipv6_enable": "on",
-                "wan_ipv6_ip6addr": "2601::1/64",
+                "wan_ipv6_ip6addr": "2001:db8::1/64",
                 "wan_ipv6_gateway": "fe80::1",
                 "wan_ipv6_pridns": "2001:4860:4860::8888",
                 "wan_ipv6_snddns": "2001:4860:4860::8844",
                 "wan_ipv6_conntype": "dhcpv6",
-                "lan_ipv6_ipaddr": "FE80::6A7F:F0FF:FE3B:1CA0/64",
+                "lan_ipv6_ipaddr": "2001:db8:1::1/64",
                 "lan_ipv6_assign_type": "slaac",
-                "lan_ipv6_link_local_addr": "FE80::6A7F:F0FF:FE3B:1CA0/64",
+                "lan_ipv6_link_local_addr": "2001:db8:1::1/64",
             }
         if base_path == cli.NETWORK_LAN_IPV6:
             return {
-                "address": "2601::6a7f:f0ff:fe3b:1ca0/64",
+                "address": "2001:db8:2::1/64",
                 "assign_type": "slaac",
                 "dhcp_prefix": "",
-                "slaac_prefix": "2601::/64",
+                "slaac_prefix": "2001:db8::/64",
             }
         if base_path == cli.EASYMESH_DEVICE_LIST:
             return [
                 {
-                    "mac": "68-7F-F0-3B-1C-A0",
+                    "mac": "02-00-00-00-00-02",
                     "client_num": 4,
-                    "ip": "192.168.0.1",
+                    "ip": "192.0.2.1",
                     "role": "main_router",
                     "name": "Archer BE3500",
                     "model": "Archer BE3500",
                     "status": "connected",
-                    "location": "bedroom",
+                    "location": "fixture-room",
                     "vendor": "TP-Link",
                     "device_type": "WirelessRouter",
                 }
@@ -292,10 +292,10 @@ class FakeRouter:
                 "enable": True,
                 "listen_port": "51820",
                 "address": "10.5.5.1/32",
-                "public_key": "agvcmR8FY3Y4phfJaCC5b0UnOoHqYxrHGJDHKMhi3Uc=",
+                "public_key": "synthetic-public-key-not-a-real-key",
                 "persistent_keepalive": "25",
                 "dns": True,
-                "private_key": "sDfwQQpn3mKGETYQTgUv+ZzEVPVbCJdDJtLnNvkyXHo=",
+                "private_key": "synthetic-private-key-not-a-real-key",
             }
         if base_path == cli.NAT_ALG:
             return {"sip": "on", "ipsec": "on", "pptp": "on", "ftp": "on"}
@@ -319,8 +319,8 @@ class FakeRouter:
             return {"number": 0, "list": {}}
         if base_path == cli.FOLDER_SHARING_SETTINGS:
             return [
-                {"protocol": "samba", "enable": "on", "link": r"\\192.168.0.1", "port": "---"},
-                {"protocol": "ftp", "enable": "on", "link": "ftp://192.168.0.1:21", "port": 21},
+                {"protocol": "samba", "enable": "on", "link": r"\\192.0.2.1", "port": "---"},
+                {"protocol": "ftp", "enable": "on", "link": "ftp://192.0.2.1:21", "port": 21},
             ]
         if base_path == cli.FOLDER_SHARING_SERVER:
             return {"server": "TP-Share"}
@@ -483,40 +483,40 @@ class CliTests(unittest.TestCase):
     def test_clients_active_outputs_devices(self):
         output = run_cli(["--json", "--no-input", "clients", "--active"])
         data = json.loads(output)
-        self.assertEqual(data[0]["hostname"], "debian_linux")
-        self.assertEqual(data[0]["ip"], "192.168.0.79")
+        self.assertEqual(data[0]["hostname"], "fixture-device")
+        self.assertEqual(data[0]["ip"], "192.0.2.79")
 
     def test_device_lookup_outputs_detail(self):
-        output = run_cli(["--json", "--no-input", "device", "debian"])
+        output = run_cli(["--json", "--no-input", "device", "fixture"])
         data = json.loads(output)
-        self.assertEqual(data["mac"], "48-BA-4E-40-B4-F4")
+        self.assertEqual(data["mac"], "02-00-00-00-00-01")
 
     def test_device_reserve_requires_confirmation(self):
         with self.assertRaises(SystemExit) as raised:
-            run_cli(["--json", "--no-input", "device", "reserve", "debian"])
+            run_cli(["--json", "--no-input", "device", "reserve", "fixture"])
         self.assertIn("--yes", str(raised.exception))
 
     def test_device_reserve_creates_dhcp_reservation(self):
-        output = run_cli(["--json", "--no-input", "device", "reserve", "debian", "--yes"])
+        output = run_cli(["--json", "--no-input", "device", "reserve", "fixture", "--yes"])
         data = json.loads(output)
         self.assertTrue(data["created"])
-        self.assertEqual(data["reservation"]["ip"], "192.168.0.79")
+        self.assertEqual(data["reservation"]["ip"], "192.0.2.79")
 
     def test_device_reserve_accepts_postfix_action(self):
-        output = run_cli(["--json", "--no-input", "device", "debian", "reserve", "--yes"])
+        output = run_cli(["--json", "--no-input", "device", "fixture", "reserve", "--yes"])
         data = json.loads(output)
         self.assertTrue(data["created"])
-        self.assertEqual(data["reservation"]["mac"], "48-BA-4E-40-B4-F4")
+        self.assertEqual(data["reservation"]["mac"], "02-00-00-00-00-01")
 
     def test_device_block_can_enforce_blacklist_mode(self):
-        output = run_cli(["--json", "--no-input", "device", "block", "debian", "--yes", "--enforce"])
+        output = run_cli(["--json", "--no-input", "device", "block", "fixture", "--yes", "--enforce"])
         data = json.loads(output)
         self.assertTrue(data["blocked"])
         self.assertTrue(data["enforced"])
         self.assertEqual(data["access_control"]["mode"], "black")
 
     def test_device_block_accepts_postfix_action(self):
-        output = run_cli(["--json", "--no-input", "device", "debian", "block", "--yes"])
+        output = run_cli(["--json", "--no-input", "device", "fixture", "block", "--yes"])
         data = json.loads(output)
         self.assertTrue(data["blocked"])
         self.assertFalse(data["enforced"])
@@ -559,11 +559,11 @@ class CliTests(unittest.TestCase):
 
     def test_device_unblock_removes_blacklist_entry(self):
         router = FakeRouter()
-        router.blacklist.append({"key": "block-1", "name": "debian_linux", "ipaddr": "192.168.0.79", "mac": "48-BA-4E-40-B4-F4"})
+        router.blacklist.append({"key": "block-1", "name": "fixture-device", "ipaddr": "192.0.2.79", "mac": "02-00-00-00-00-01"})
         with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp, **PROFILE_SCRUB}, clear=False), patch.object(cli, "build_router", return_value=router):
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
-                cli.main(["--json", "--no-input", "device", "unblock", "48-BA-4E-40-B4-F4", "--yes"])
+                cli.main(["--json", "--no-input", "device", "unblock", "02-00-00-00-00-01", "--yes"])
         data = json.loads(out.getvalue())
         self.assertTrue(data["unblocked"])
         self.assertEqual(router.blacklist, [])
@@ -573,10 +573,10 @@ class CliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp, **PROFILE_SCRUB}, clear=False), patch.object(cli, "build_router", return_value=router):
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
-                cli.main(["--json", "--no-input", "device", "vpn", "debian", "on", "--yes"])
+                cli.main(["--json", "--no-input", "device", "vpn", "fixture", "on", "--yes"])
         data = json.loads(out.getvalue())
         self.assertTrue(data["vpn_client"])
-        self.assertEqual(router.vpn_devices, [("48-BA-4E-40-B4-F4", True)])
+        self.assertEqual(router.vpn_devices, [("02-00-00-00-00-01", True)])
 
     def test_speed_summarizes_throughput(self):
         output = run_cli(["--json", "--no-input", "speed"])
@@ -666,17 +666,17 @@ class CliTests(unittest.TestCase):
         self.assertEqual(data["transport"], "local-cli")
 
     def test_device_block_plan_does_not_mutate(self):
-        output = run_cli(["--json", "--no-input", "device", "block", "debian", "--plan", "--enforce"])
+        output = run_cli(["--json", "--no-input", "device", "block", "fixture", "--plan", "--enforce"])
         data = json.loads(output)
         self.assertTrue(data["plan"])
         self.assertFalse(data["will_mutate"])
         self.assertEqual(data["action"], "device.block")
-        self.assertEqual(data["target"]["mac"], "48-BA-4E-40-B4-F4")
+        self.assertEqual(data["target"]["mac"], "02-00-00-00-00-01")
         self.assertIn("--enforce", data["command"])
         self.assertIn("device_connectivity_loss", data["risk"])
 
     def test_device_admin_profile_allows_device_plan_and_blocks_wifi(self):
-        output = run_cli(["--json", "--profile", "device-admin", "--no-input", "device", "reserve", "debian", "--plan"])
+        output = run_cli(["--json", "--profile", "device-admin", "--no-input", "device", "reserve", "fixture", "--plan"])
         data = json.loads(output)
         self.assertEqual(data["action"], "device.reserve")
         with self.assertRaises(SystemExit) as raised:
@@ -684,11 +684,11 @@ class CliTests(unittest.TestCase):
         self.assertIn("profile", str(raised.exception))
 
     def test_read_only_profile_blocks_device_mutation(self):
-        output = run_cli(["--json", "--profile", "read-only", "--no-input", "device", "debian"])
+        output = run_cli(["--json", "--profile", "read-only", "--no-input", "device", "fixture"])
         data = json.loads(output)
-        self.assertEqual(data["hostname"], "debian_linux")
+        self.assertEqual(data["hostname"], "fixture-device")
         with self.assertRaises(SystemExit) as raised:
-            run_cli(["--profile", "read-only", "--no-input", "device", "block", "debian", "--plan"])
+            run_cli(["--profile", "read-only", "--no-input", "device", "block", "fixture", "--plan"])
         self.assertIn("blocked", str(raised.exception))
 
     def test_watch_collects_read_only_samples(self):
@@ -696,7 +696,7 @@ class CliTests(unittest.TestCase):
         data = json.loads(output)
         self.assertEqual(data[0]["target"], "devices")
         self.assertEqual(data[0]["sequence"], 1)
-        self.assertEqual(data[0]["data"][0]["hostname"], "debian_linux")
+        self.assertEqual(data[0]["data"][0]["hostname"], "fixture-device")
 
     def test_demo_offline_reports_agent_workflow(self):
         output = run_cli(["--json", "demo"])
@@ -707,18 +707,18 @@ class CliTests(unittest.TestCase):
         self.assertIn("examples/agent-runbook.md", data["docs"])
 
     def test_demo_live_includes_read_only_plan(self):
-        output = run_cli(["--json", "--no-input", "demo", "--live", "--device", "debian"])
+        output = run_cli(["--json", "--no-input", "demo", "--live", "--device", "fixture"])
         data = json.loads(output)
         self.assertTrue(data["live"])
         self.assertEqual(data["live_checks"]["device_plan"]["action"], "device.block")
         self.assertFalse(data["live_checks"]["device_plan"]["will_mutate"])
-        self.assertEqual(data["live_checks"]["device_plan"]["target"]["hostname"], "debian_linux")
+        self.assertEqual(data["live_checks"]["device_plan"]["target"]["hostname"], "fixture-device")
 
     def test_device_plan_writes_audit_event_with_reason(self):
         with tempfile.TemporaryDirectory() as tmp:
             output = run_cli_in_config(
                 tmp,
-                ["--json", "--reason", "testing audit", "--no-input", "device", "block", "debian", "--plan"],
+                ["--json", "--reason", "testing audit", "--no-input", "device", "block", "fixture", "--plan"],
             )
             plan = json.loads(output)
             self.assertEqual(plan["action"], "device.block")
@@ -818,8 +818,8 @@ class CliTests(unittest.TestCase):
         self.assertEqual(changes, [])
 
     def test_state_diff_structural_change_surfaces(self):
-        before = {"wifi": {"enabled": True, "channel": 10, "ssid": "ps"}}
-        after = {"wifi": {"enabled": True, "channel": 36, "ssid": "ps"}}
+        before = {"wifi": {"enabled": True, "channel": 10, "ssid": "fixture-wifi"}}
+        after = {"wifi": {"enabled": True, "channel": 36, "ssid": "fixture-wifi"}}
         changes = cli.diff_values(before, after)
         paths = {c["path"] for c in changes}
         self.assertEqual(paths, {"wifi.channel"})
@@ -1026,7 +1026,7 @@ class CliTests(unittest.TestCase):
         output = run_cli(["--json", "--no-input", "port-forward"])
         data = json.loads(output)
         self.assertEqual(len(data), 1)
-        self.assertEqual(data[0]["name"], "NPM-HTTPS")
+        self.assertEqual(data[0]["name"], "fixture-https")
         self.assertEqual(data[0]["external_port"], "443")
         self.assertEqual(data[0]["internal_port"], "8443")
 
@@ -1043,7 +1043,7 @@ class CliTests(unittest.TestCase):
         self.assertTrue(data["wan"]["enabled"])
         self.assertEqual(data["wan"]["connection_type"], "dhcpv6")
         self.assertEqual(data["lan"]["assign_type"], "slaac")
-        self.assertIn("6a7f", data["lan"]["address"].lower())
+        self.assertEqual(data["lan"]["address"], "2001:db8:2::1/64")
 
     def test_mesh_reports_nodes(self):
         output = run_cli(["--json", "--no-input", "mesh"])
@@ -1059,7 +1059,7 @@ class CliTests(unittest.TestCase):
         self.assertTrue(data["enabled"])
         self.assertEqual(data["listen_port"], 51820)
         self.assertEqual(data["address"], "10.5.5.1/32")
-        self.assertTrue(data["public_key"].startswith("agvcmR"))
+        self.assertEqual(data["public_key"], "synthetic-public-key-not-a-real-key")
         self.assertNotIn("private_key", data)
 
     def test_nat_reports_upnp_dmz_and_alg(self):
@@ -1152,7 +1152,7 @@ class CliTests(unittest.TestCase):
         self.assertNotIn("status", names)
 
     def test_dry_run_is_an_alias_for_plan(self):
-        output = run_cli(["--json", "--no-input", "device", "block", "debian", "--dry-run"])
+        output = run_cli(["--json", "--no-input", "device", "block", "fixture", "--dry-run"])
         data = json.loads(output)
         self.assertTrue(data["plan"])
         self.assertEqual(data["action"], "device.block")
@@ -1170,7 +1170,7 @@ class CliTests(unittest.TestCase):
         err = io.StringIO()
         with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp, **PROFILE_SCRUB}, clear=False), patch.object(cli, "build_router", return_value=FakeRouter()):
             with contextlib.redirect_stderr(err):
-                code = cli.run(["--json", "--no-input", "device", "reserve", "debian"])
+                code = cli.run(["--json", "--no-input", "device", "reserve", "fixture"])
         self.assertEqual(code, 5)
         envelope = json.loads(err.getvalue().strip().splitlines()[-1])
         self.assertEqual(envelope["error"]["kind"], "confirmation_required")
