@@ -1,12 +1,12 @@
 # tplinkctl
 
 [![CI](https://github.com/JithendraNara/tplinkctl/actions/workflows/ci.yml/badge.svg)](https://github.com/JithendraNara/tplinkctl/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/release-v0.5.3-blue.svg)](https://github.com/JithendraNara/tplinkctl/releases/tag/v0.5.3)
+[![Version](https://img.shields.io/badge/release-v0.6.0-blue.svg)](https://github.com/JithendraNara/tplinkctl/releases/tag/v0.6.0)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org/)
 [![CLI Spec](https://img.shields.io/badge/clispec-v0.2-emerald)](https://clispec.dev/)
 [![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 
-**Autonomous agent-ready CLI and stdio JSON-RPC MCP server for local TP-Link router management.**
+**CLI, stdio JSON-RPC MCP server and authenticated HTTP API for local TP-Link router management.**
 
 `tplinkctl` turns stateful, slow, and browser-dependent router admin interfaces into a high-speed, local-first API interface designed for humans, shell scripts, and autonomous AI coding agents (Hermes, Claude Code, Cursor, Codex, OpenClaw).
 
@@ -16,7 +16,7 @@
 
 - 🛡️ **Autonomous Mutation Safety:** Plan-before-execute via `--plan` / `--dry-run`, mandatory `--yes` confirmations on destructive actions, noise-filtered state snapshot diffing (`state diff`), and rollback contracts.
 - 🤖 **Agent-First Discovery:** Full [CLI Spec v0.2](https://clispec.dev/) compliance via `tplinkctl schema`, structured semantic exit codes, JSON error envelopes on `stderr`, and built-in `capabilities`, `AGENTS.md`, and `llms.txt`.
-- ⚡ **Dual Transport (CLI + MCP):** 50+ CLI subcommands paired with 30 stdio JSON-RPC MCP tools in `tplinkctl-mcp` with zero heavy SDK dependencies.
+- ⚡ **CLI, MCP and HTTP:** Shared discovery metadata for 33 stdio MCP tools and 29 HTTP operations, with a generated OpenAPI 3.1.2 contract. No MCP SDK dependency.
 - 🔒 **Granular Policy Profiles:** 4 security tiers (`read-only`, `device-admin`, `network-admin`, `dangerous`) to safely constrain autonomous agents in long-running sessions.
 - 📡 **Deep Hardware Coverage:** 55+ reverse-engineered endpoints covering Wi-Fi 7 (OFDMA, TWT, DFS, Smart Connect), EasyMesh, WireGuard VPN, QoS bandwidth limits, NAT ALG/DMZ/UPnP, IPTV/VLAN, USB storage sharing, and power eco schedules.
 
@@ -81,7 +81,7 @@ tplinkctl schema
 | | `device unblock` | `device_unblock` | Remove device from Access Control blacklist | ⚠️ Yes |
 | | `device access` | — | Access Control mode (blacklist / whitelist) | ⚠️ Yes |
 | | `speed` | — | Router-reported throughput per device | No |
-| **Wi-Fi & Wireless** | `wifi-info` | — | SSIDs, bands, channel state, redacted keys | No |
+| **Wi-Fi & Wireless** | `wifi-info` | `wifi_info` | SSIDs, bands, channel state, redacted keys | No |
 | | `wifi-status` | — | Radio enablement for 2.4G / 5G / 6G / Guest / IoT | No |
 | | `wifi-advanced` | `wifi_advanced` | OFDMA, TWT, DFS channel availability, schedule | No |
 | | `wifi-config` | `wifi_config_plan` / `wifi_config` | Configure radio channel, width, txpower, SSID | ⚠️ Yes |
@@ -100,8 +100,8 @@ tplinkctl schema
 | | `storage` | `storage_status` | USB disks, Samba/FTP sharing, Time Machine | No |
 | **Mesh & VPN** | `mesh` | `mesh_devices` | EasyMesh network topology and node roles | No |
 | | `wireguard` | `wireguard_status` | WireGuard server configuration & status | No |
-| | `vpn-status` | — | OpenVPN / PPTP VPN server status | No |
-| | `vpn-client-status` | — | VPN client routing status | No |
+| | `vpn-status` | `vpn_status` | OpenVPN / PPTP VPN server status | No |
+| | `vpn-client-status` | `vpn_client_status` | VPN client routing status | No |
 | **Agent & Ops** | `schema` | — | Machine-readable [clispec v0.2](https://clispec.dev/) contract | No |
 | | `capabilities` | — | Agent capability manifest with risks & quirks | No |
 | | `tools` | — | JSON tool schemas for CLI wrappers | No |
@@ -119,9 +119,13 @@ tplinkctl schema
 | Profile | Allowed Commands | Allowed Operations | Denied Operations |
 |---|---|---|---|
 | `read-only` | All read commands | Discovery & inspection | All mutations (`device.*`, `wifi.*`, `reboot`) |
-| `device-admin` *(Default)* | Read + `device` | Inventory, DHCP reservations, Blacklist block/unblock | Router-wide toggles (`wifi.*`, `vpn.*`, `reboot`, `raw`) |
+| `device-admin` | Read + `device` | Inventory, DHCP reservations, Blacklist block/unblock | Router-wide toggles (`wifi.*`, `vpn.*`, `reboot`, `raw`) |
 | `network-admin` | Read + `device`, `wifi`, `vpn`, `reboot` | Everything except raw escape hatches | `advanced.raw` |
 | `dangerous` | All (`*`) | All (`*`) | None (unrestricted) |
+
+CLI and MCP apply no profile restriction when neither their profile flag nor
+profile environment variables are set. Confirmation guards still apply. Set a
+profile explicitly for agents; only HTTP defaults to `read-only`.
 
 Set policy profiles via CLI flag or environment variable:
 
@@ -139,7 +143,8 @@ export TPLINK_PROFILE=device-admin
 Autonomous agents should follow this standard mutation lifecycle:
 
 ```bash
-# 1. Plan the change (dry-run preview with rollback instructions)
+# 1. Save the baseline, then plan the change
+tplinkctl --json --no-input state save --name before-block
 tplinkctl --json --reason "pause guest device" --no-input device block Pixel --plan --enforce
 
 # 2. Execute with explicit confirmation
@@ -157,7 +162,7 @@ tplinkctl --json events --tail 5
 
 ## MCP Server Integration
 
-`tplinkctl-mcp` exposes 30 router tools over standard JSON-RPC stdio (no MCP SDK / FastMCP dependency — see `src/tplink_admin/mcp.py`). Mutating MCP tools require `confirm=true` in tool arguments.
+`tplinkctl-mcp` exposes 33 tools over standard JSON-RPC stdio (no MCP SDK / FastMCP dependency — see `src/tplink_admin/mcp.py`). Mutating MCP tools require `confirm=true` in tool arguments.
 
 Add `tplinkctl-mcp` to your agent configuration:
 
@@ -242,20 +247,23 @@ Failures write a single-line JSON error envelope as the **last line of stderr**:
 
 ## Router & Hardware Compatibility
 
-`tplinkctl` is built on [`tplinkrouterc6u`](https://pypi.org/project/tplinkrouterc6u/) (`>=5.30.0`) and includes an active payload normalizer for TP-Link's SG authentication protocol.
+`tplinkctl` is built on [`tplinkrouterc6u`](https://pypi.org/project/tplinkrouterc6u/) (pinned to `5.30.0`; see [ADR 001](docs/adr/001-vpn-client-form-encoding.md) before upgrading) and includes an active payload normalizer for TP-Link's SG authentication protocol.
 
 | Router Model | Firmware Tested | SG Protocol | Notes |
 |---|---|:---:|---|
-| **Archer BE3500 v1.0** | `1.3.3 Build 20260618` / `1.1.3 Build 20251120` | ✓ | Primary target; full 55+ endpoint coverage |
-| **Archer BE220 / BE230 / BE3600** | SG-generation firmwares | ✓ | Compatible via `--client sg` |
-| **Archer AX72 / AX12 / C6U** | Modern RSA-OAEP / SG firmwares | ✓ | Compatible |
+| **Archer BE3500 v1.0** | `1.3.5` (VPN reads); earlier `1.3.3` / `1.1.3` | ✓ | Primary tested target; endpoint support varies by firmware and operation |
+| **Archer BE220 / BE230 / BE3600** | Not verified by this release | — | Candidate SDK models; verify read-only access before use |
+| **Archer AX72 / AX12 / C6U** | Not verified by this release | — | SDK support does not establish tplinkctl firmware compatibility |
 
 ---
 
 ## Development & Verification
 
 ```bash
-# Run unit test suite (86 tests)
+# Install development dependencies
+.venv/bin/python -m pip install -e '.[test]'
+
+# Run unit test suite
 make test
 
 # Run offline smoke suite

@@ -60,10 +60,10 @@ class McpTests(unittest.TestCase):
         self.assertIn("state_snapshot", names)
 
     def test_device_show_tool_uses_cli_json(self):
-        result = call_tool_with_fake_router("device_show", {"query": "debian"})
+        result = call_tool_with_fake_router("device_show", {"query": "fixture"})
         payload = json.loads(result["content"][0]["text"])
         self.assertFalse(result["isError"])
-        self.assertEqual(payload["hostname"], "debian_linux")
+        self.assertEqual(payload["hostname"], "fixture-device")
 
     def test_firmware_audit_tool_is_read_only(self):
         result = call_tool_with_fake_router("firmware_audit")
@@ -73,7 +73,7 @@ class McpTests(unittest.TestCase):
         self.assertFalse(payload["action_taken"])
 
     def test_device_plan_tool_does_not_mutate(self):
-        result = call_tool_with_fake_router("device_plan", {"action": "block", "query": "debian", "enforce": True})
+        result = call_tool_with_fake_router("device_plan", {"action": "block", "query": "fixture", "enforce": True})
         payload = json.loads(result["content"][0]["text"])
         self.assertTrue(payload["plan"])
         self.assertFalse(payload["will_mutate"])
@@ -85,7 +85,7 @@ class McpTests(unittest.TestCase):
                 "jsonrpc": "2.0",
                 "id": 3,
                 "method": "tools/call",
-                "params": {"name": "device_block", "arguments": {"query": "debian"}},
+                "params": {"name": "device_block", "arguments": {"query": "fixture"}},
             }
         )
         self.assertTrue(response["result"]["isError"])
@@ -149,7 +149,7 @@ class McpTests(unittest.TestCase):
 
     def test_audit_tail_tool_reads_cli_events(self):
         with tempfile.TemporaryDirectory() as tmp:
-            call_tool_in_config(tmp, "device_plan", {"action": "block", "query": "debian"})
+            call_tool_in_config(tmp, "device_plan", {"action": "block", "query": "fixture"})
             result = call_tool_in_config(tmp, "audit_tail", {"tail": 5})
         payload = json.loads(result["content"][0]["text"])
         self.assertEqual(payload["count"], 1)
@@ -180,7 +180,7 @@ class McpTests(unittest.TestCase):
     def test_new_read_only_mcp_tools(self):
         pf = call_tool_with_fake_router("port_forward_list")
         self.assertFalse(pf["isError"])
-        self.assertEqual(json.loads(pf["content"][0]["text"])[0]["name"], "NPM-HTTPS")
+        self.assertEqual(json.loads(pf["content"][0]["text"])[0]["name"], "fixture-https")
 
         ps = call_tool_with_fake_router("port_speed")
         self.assertFalse(ps["isError"])

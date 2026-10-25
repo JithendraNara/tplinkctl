@@ -54,7 +54,10 @@ Linux additionally passed all five Forge CLI tests including actual Docker
 failure cleanup. Forge validated/generated 29 HTTP operations from input SHA256
 `f8892e979bf4eb42ee4d51276ee7a7da2a32a1f2eb38db901e2746df00a4152b`.
 These are local verification results, not a claim of published CI or a release.
-Exact-head CI, independent review and issue-by-issue closeout remain release gates.
+These figures describe the initial implementation checkpoint, not the final release.
+The later implementation head `d42cb80` passed 115 tests and exact-head Python
+3.10/3.11/3.12 plus Forge CI (runs 40169773418 and 40169773614). Release changes
+must pass those gates again; release status is recorded on GitHub.
 
 ## Independent review hardening
 
@@ -89,6 +92,19 @@ The actual missing-password path was reproduced in a failing HTTP test. Router
 credential errors now retain semantic `auth` but return 502 without a Bearer
 challenge; invalid caller credentials remain 401. OpenAPI explicitly documents
 this upstream-status override. The regression verifies no SDK construction occurs.
+
+## Release packaging and documentation audit
+
+The release audit reproduced missing HTTP fixtures and contract tooling in the
+source archive. `MANIFEST.in` now includes documentation, examples, fixtures and
+validation tools; a clean wheel install and extracted-source tests verify the
+artifact rather than relying on the checkout. Requirements-file dependencies
+match the package runtime dependencies.
+
+Legacy key material and identifying network fixtures were replaced with explicit
+synthetic values. This change does not erase prior Git history or establish
+whether legacy material was ever used on a router. CLI/MCP profile restrictions
+are opt-in; HTTP alone defaults to read-only. No live mutation was performed.
 
 ## Constraints
 

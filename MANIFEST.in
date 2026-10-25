@@ -1,0 +1,7 @@
+include AGENTS.md CHANGELOG.md CONTRIBUTING.md SECURITY.md llms.txt
+include Makefile requirements.txt tpadmin.py
+recursive-include docs *.md *.json
+recursive-include scripts *.py
+recursive-include tests *.py
+recursive-include tooling *.json *.txt *.mjs
+recursive-include examples *.md *.json *.js

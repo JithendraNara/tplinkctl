@@ -15,7 +15,8 @@ tplinkctl-api --profile read-only
 ```
 
 The default listener is `127.0.0.1:8765`. Each request, including
-`GET /v1/openapi.json`, requires `Authorization: Bearer <credential>`.
+`GET /v1/openapi.json`, requires `Authorization: Bearer <API_TOKEN>`.
+Replace `<API_TOKEN>` with the server credential; it is a placeholder, not a literal token.
 The command-line profile is fixed server-side; request parameters cannot change
 it. Use `device-admin` for device block/unblock or `network-admin` for LED and
 radio configuration. The `dangerous` profile does not expose raw router APIs.

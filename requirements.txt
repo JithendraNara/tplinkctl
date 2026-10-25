@@ -1,2 +1,3 @@
 requests>=2.33.1
-tplinkrouterc6u>=5.30.0
+jsonschema>=4.18,<5
+tplinkrouterc6u==5.30.0

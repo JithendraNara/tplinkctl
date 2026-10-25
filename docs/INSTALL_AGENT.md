@@ -1,6 +1,8 @@
 # Agent Install Guide
 
-This guide wires `tplinkctl` into local AI agents through the CLI and the stdio MCP server.
+This guide wires `tplinkctl` into local AI agents through the CLI and stdio MCP server.
+For the authenticated HTTP transport and its separate API credential, see
+[HTTP API](HTTP_API.md).
 
 ## Install
 
@@ -14,6 +16,12 @@ If package installation is unavailable, run from source:
 ```bash
 PYTHONPATH=src .venv/bin/python -m tplink_admin.cli --json demo
 PYTHONPATH=src .venv/bin/python -m tplink_admin.mcp
+```
+
+For source development and `make smoke`, install the validation extra:
+
+```bash
+.venv/bin/python -m pip install -e '.[test]'
 ```
 
 ## Environment
@@ -80,7 +88,7 @@ MCP methods:
 - `tools/call`
 - `ping`
 
-Tools:
+Selected tools (use MCP `tools/list` or `tplinkctl --json tools` for the full registry):
 
 - `router_status`
 - `firmware_audit`
