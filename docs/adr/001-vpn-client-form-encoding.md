@@ -43,6 +43,22 @@ so doctor/raw/device helpers share the same encoding contract as upstream
 status reads. This avoids copying VPN payload fields into URLs. Live VPN
 writes were not tested and are not advertised as live-verified.
 
+## SDK compatibility boundary
+
+Fresh-install CI resolved the unbounded `tplinkrouterc6u>=5.30.0` dependency to
+5.37.0, unlike the live-tested local 5.30.0. In 5.37.0,
+`_merge_path_and_body_params` parses all plaintext as URL-encoded data before
+encryption. Thus the existing JSON adapter's `{"operation":"read"}` becomes
+`%7B%22operation%22%3A%22read%22%7D=`, and duplicated query/body operations are
+removed from the body. The HTTP-boundary regressions caught this drift.
+
+Pin the SDK to the live-tested 5.30.0 for this fix. Do not weaken the wire tests
+to accommodate corrupted JSON or silently rewrite the transport for unrelated
+controllers. A future SDK upgrade must revalidate both JSON and form endpoints,
+query/body conflict handling, explicit raw payloads and mutation behavior. The
+pin is intentional compatibility debt, not a claim that newer SDKs are faulty
+on their own.
+
 ## Verification
 
 - A new regression runs the real upstream SG request, encryption and response
