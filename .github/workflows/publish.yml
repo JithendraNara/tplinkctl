@@ -24,6 +24,7 @@ jobs:
       - name: Validate distribution metadata and installed entry points
         run: |
           python -m twine check dist/*
+          python scripts/check_distribution.py dist
           python -m pip install dist/*.whl
           cd "$RUNNER_TEMP"
           tplinkctl --version
