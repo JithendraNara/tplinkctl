@@ -70,6 +70,19 @@ class SgVpnTransportTests(unittest.TestCase):
             result = cli.load_collection(self.router, "admin/vpn?form=vpn_user_list")
         self.assertEqual(result, [{"name": "Test phone", "access": "on"}])
 
+        # A payload field not already in the URL must remain encrypted, rather
+        # than being copied into the query by the generic SG workaround.
+        body = "operation=connected_status&key=example%2Bprofile%26one"
+        def profile_post(url, data, **kwargs):
+            self.assertEqual(parse_qs(urlsplit(url).query), {"form": ["server"]})
+            plaintext = self.router._aes_decrypt(parse_qs(data)["data"][0])
+            self.assertEqual(plaintext, body)
+            return self.respond({"success": True, "data": {"status": "connected"}})
+        with patch("tplinkrouterc6u.client.sg.post", side_effect=profile_post), \
+             patch.object(cli.requests, "post", side_effect=profile_post):
+            result = cli.api_request(self.router, "admin/vpn?form=server", body)
+        self.assertEqual(result, {"status": "connected"})
+
     def test_non_vpn_json_conversion_is_unchanged(self):
         """Keep the existing SG JSON workaround outside the VPN controller."""
         for path in ("admin/status?form=all", "admin/vpnconn?form=config"):

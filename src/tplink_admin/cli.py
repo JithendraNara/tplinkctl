@@ -38,9 +38,9 @@ try:
         _orig_sg_request = TplinkRouterSG.request
 
         def _safe_sg_request(self, path: str, data: str, ignore_response: bool = False, ignore_errors: bool = False):
-            # The VPN controller consumes URL-encoded plaintext, unlike the
-            # JSON-based SG endpoints. Converting it to JSON yields misleading
-            # "no such callback" / Lua dispatcher errors on BE3500 firmware.
+            # Preserve the VPN controller's URL-encoded plaintext; leave the
+            # CLI's existing non-VPN JSON workaround unchanged. Converting VPN
+            # forms to JSON causes misleading callback/dispatcher errors.
             is_vpn_controller = path.split("?", 1)[0].strip("/") == "admin/vpn"
             if not is_vpn_controller and isinstance(data, str) and "=" in data and not data.strip().startswith("{"):
                 parsed = dict(parse_qsl(data))
