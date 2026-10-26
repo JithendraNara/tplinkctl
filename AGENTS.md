@@ -22,7 +22,7 @@ Do not echo `TPLINK_PASSWORD` in logs, reports, prompts, or shell snippets.
 
 ## Discovery Flow
 
-1. Run `tplinkctl schema` for the clispec v0.2 machine-readable command/error contract. Narrow with `tplinkctl schema device`.
+1. Run `tplinkctl schema` for the clispec v0.2 machine-readable command/error contract, generated from the real parser (every command, flag, type and choice). Narrow with `tplinkctl schema device`. `docs/commands.md` is the rendered copy; regenerate with `make docs` after changing any parser.
 2. Run `tplinkctl --json capabilities` to inspect available commands, risks, rollback hints, and known firmware issues.
 3. Run `tplinkctl --json tools` to discover the local tool surface and command mappings.
 4. Run `tplinkctl --json demo` for a compact workflow report.

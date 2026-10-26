@@ -1,4 +1,4 @@
-.PHONY: install test lint contract smoke doctor endpoints demo agent-doctor
+.PHONY: install test lint contract docs smoke doctor endpoints demo agent-doctor
 
 PYTHON ?= .venv/bin/python
 TPLINKCTL ?= .venv/bin/tplinkctl
@@ -14,8 +14,13 @@ lint:
 
 contract:
 	PYTHONPATH=src $(PYTHON) -m tplink_admin.openapi --check docs/openapi.json
+	PYTHONPATH=src $(PYTHON) -m tplink_admin.clidoc --check docs/commands.md
 	$(PYTHON) scripts/forge_generate.py validate --spec docs/openapi.json
 	$(PYTHON) scripts/forge_test.py
+
+docs:
+	PYTHONPATH=src $(PYTHON) -m tplink_admin.openapi > docs/openapi.json
+	PYTHONPATH=src $(PYTHON) -m tplink_admin.clidoc > docs/commands.md
 
 smoke: lint test contract
 	$(TPLINKCTL) --version

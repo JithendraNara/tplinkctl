@@ -9,6 +9,7 @@
 
 ### Fixed
 
+- `tplinkctl schema` is generated from the argparse tree. It previously listed only capability-derived commands, omitting 17 real ones (`ipv4`, `leases`, `reservations`, `doctor`, `clients`, `vpn`, `config set`, `state save`, `led on`, `device show`, …), declared only the `--plan`/`--dry-run`/`--yes` flags as arguments, and reported `raw` as non-mutating. Commands now carry real flags, types, choices and defaults, and `mutating` is derived from the policy operation ids.
 - MCP stdio transport uses newline-delimited JSON, the framing MCP clients expect, instead of Content-Length framing. Content-Length-framed input is still accepted (#16).
 - MCP protocol conformance (#17), verified by a black-box harness against the official 2025-11-25, 2025-06-18, 2025-03-26 and 2024-11-05 JSON schemas and by the official Python (v2) and TypeScript SDK clients:
   - Version negotiation follows the lifecycle rule: an unsupported requested version gets the server's latest supported version, not an error.
@@ -28,6 +29,7 @@
 
 ### Added
 
+- `docs/commands.md`, a command reference rendered from `tplinkctl schema` (`python -m tplink_admin.clidoc`, `make docs`); `make contract` fails when it is stale.
 - `VISION.md` (scope, discuss-first areas, merge bar) and a PR template with an explicit validation line.
 - MCP server `instructions`, tool `title`, and `serverInfo` title/description/website; `outputSchema` and `structuredContent` on 2025-06-18+; opt-in `tools/list` pagination (`TPLINK_MCP_PAGE_SIZE`); per-tool rate limits (`TPLINK_MCP_RATE_LIMIT_PER_MINUTE`, plus a tighter `TPLINK_MCP_EXPENSIVE_RATE_LIMIT_PER_MINUTE` for `doctor_deep`/`watch`).
 
