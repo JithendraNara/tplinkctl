@@ -2938,9 +2938,13 @@ def schema_arg(action: argparse.Action) -> dict[str, Any] | None:
         arg_type = "integer"
     else:
         arg_type = "string"
-    entry: dict[str, Any] = {"name": name, "type": arg_type, "required": bool(action.required)}
-    if not action.option_strings and action.nargs not in ("?", "*", argparse.REMAINDER):
-        entry["required"] = True
+    if action.option_strings:
+        required = bool(action.required)
+    else:
+        # Decide from nargs: argparse before 3.12 marks nargs="*" positionals
+        # as required, which would make the schema vary by Python version.
+        required = action.nargs not in ("?", "*", argparse.REMAINDER)
+    entry: dict[str, Any] = {"name": name, "type": arg_type, "required": required}
     if action.choices is not None:
         entry["enum"] = [str(choice) for choice in action.choices]
     elif action.type is connection_arg:
