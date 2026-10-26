@@ -164,6 +164,8 @@ tplinkctl --json events --tail 5
 
 `tplinkctl-mcp` exposes 33 tools over standard JSON-RPC stdio (no MCP SDK / FastMCP dependency — see `src/tplink_admin/mcp.py`). Mutating MCP tools require `confirm=true` in tool arguments.
 
+Protocol notes (#17): newline-delimited stdio framing; protocol versions 2024-11-05…2025-11-25 negotiated at `initialize` (unsupported versions get an explicit error); tools advertise `outputSchema` and return `structuredContent` (array payloads wrapped as `{"items": [...]}`); optional knobs: `TPLINK_MCP_PAGE_SIZE` (tools/list pagination, 0 = single page), `TPLINK_MCP_RATE_LIMIT_PER_MINUTE` (default 300/tool) and `TPLINK_MCP_EXPENSIVE_RATE_LIMIT_PER_MINUTE` (default 6, for `doctor_deep`/`watch`; 0 disables a limit).
+
 Add `tplinkctl-mcp` to your agent configuration:
 
 ### Claude Desktop (`claude_desktop_config.json`)

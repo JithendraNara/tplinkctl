@@ -33,6 +33,109 @@ class McpTests(unittest.TestCase):
         self.assertEqual(response["result"]["serverInfo"]["name"], "tplinkctl-mcp")
         self.assertIn("tools", response["result"]["capabilities"])
 
+    def test_protocol_version_negotiation(self):
+        # Supported client versions are echoed; missing means latest supported;
+        # anything else is a protocol error, never a silent downgrade (#17).
+        for requested in mcp.SUPPORTED_PROTOCOL_VERSIONS:
+            response = mcp.handle_request(
+                {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                 "params": {"protocolVersion": requested}})
+            self.assertEqual(response["result"]["protocolVersion"], requested)
+        response = mcp.handle_request({"jsonrpc": "2.0", "id": 1, "method": "initialize"})
+        self.assertEqual(response["result"]["protocolVersion"], mcp.PROTOCOL_VERSION)
+        response = mcp.handle_request(
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+             "params": {"protocolVersion": "1999-01-01"}})
+        self.assertEqual(response["error"]["code"], mcp.UNSUPPORTED_PROTOCOL_VERSION)
+        self.assertEqual(response["error"]["data"]["supported"],
+                         list(mcp.SUPPORTED_PROTOCOL_VERSIONS))
+
+    def test_initialize_includes_instructions_and_honest_capabilities(self):
+        response = mcp.handle_request({"jsonrpc": "2.0", "id": 1, "method": "initialize"})
+        instructions = response["result"]["instructions"]
+        self.assertIn("confirm=true", instructions)
+        self.assertIn("plan", instructions.lower())
+        self.assertFalse(response["result"]["capabilities"]["tools"]["listChanged"])
+
+    def test_notifications_are_never_answered(self):
+        # JSON-RPC notifications (no id) must be consumed silently, any method.
+        for method in ("notifications/initialized", "notifications/cancelled",
+                       "notifications/anything"):
+            self.assertIsNone(mcp.handle_request({"jsonrpc": "2.0", "method": method}))
+
+    def test_tools_list_advertises_output_schema_and_annotations(self):
+        response = mcp.handle_request({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+        manifest = {t["name"]: t for t in cli.tool_manifest()["tools"]}
+        for tool in response["result"]["tools"]:
+            self.assertEqual(tool["outputSchema"], mcp.mcp_output_schema(manifest[tool["name"]]))
+            # MCP requires object output schemas through 2025-11-25, even for
+            # registry tools whose CLI payload is a top-level array.
+            self.assertEqual(tool["outputSchema"]["type"], "object")
+            annotations = tool["annotations"]
+            self.assertIn("idempotentHint", annotations)
+            self.assertIn("openWorldHint", annotations)
+            if manifest[tool["name"]]["read_only"]:
+                # Plan/status tools must not be flagged destructive (#17).
+                self.assertTrue(annotations["readOnlyHint"])
+                self.assertFalse(annotations["destructiveHint"])
+
+    def test_tools_list_pagination_walks_full_ordered_catalog(self):
+        with patch.dict("os.environ", {"TPLINK_MCP_PAGE_SIZE": "2"}):
+            seen, cursor = [], None
+            while True:
+                params = {} if cursor is None else {"cursor": cursor}
+                response = mcp.handle_request(
+                    {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": params})
+                seen.extend(t["name"] for t in response["result"]["tools"])
+                cursor = response["result"].get("nextCursor")
+                if cursor is None:
+                    break
+        full = mcp.handle_request({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+        self.assertEqual(seen, [t["name"] for t in full["result"]["tools"]])
+        bad = mcp.handle_request(
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {"cursor": "bogus"}})
+        self.assertEqual(bad["error"]["code"], -32602)
+
+    def test_structured_content_matches_text_and_output_schema(self):
+        from jsonschema import Draft202012Validator
+        result = call_tool_with_fake_router("device_show", {"query": "fixture"})
+        text_payload = json.loads(result["content"][0]["text"])
+        self.assertEqual(result["structuredContent"], text_payload)
+        manifest = {t["name"]: t for t in cli.tool_manifest()["tools"]}
+        errors = list(Draft202012Validator(
+            manifest["device_show"]["output_schema"]).iter_errors(result["structuredContent"]))
+        self.assertEqual(errors, [])
+
+    def test_structured_content_wraps_array_payloads(self):
+        # device_list returns a top-level array over the CLI; MCP structured
+        # content must be an object, wrapped as {"items": [...]}.
+        result = call_tool_with_fake_router("device_list")
+        text_payload = json.loads(result["content"][0]["text"])
+        self.assertIsInstance(text_payload, list)
+        self.assertEqual(result["structuredContent"], {"items": text_payload})
+
+    def test_rate_limit_returns_tool_error_with_retry_hint(self):
+        mcp._reset_rate_limiter()
+        try:
+            with tempfile.TemporaryDirectory() as tmp, patch.dict(
+                "os.environ", {"XDG_CONFIG_HOME": tmp,
+                               "TPLINK_MCP_RATE_LIMIT_PER_MINUTE": "2",
+                               **PROFILE_SCRUB}, clear=False,
+            ), patch.object(cli, "build_router", return_value=FakeRouter()):
+                def call(i):
+                    return mcp.handle_request(
+                        {"jsonrpc": "2.0", "id": i, "method": "tools/call",
+                         "params": {"name": "led_status", "arguments": {}}})
+                self.assertFalse(call(1)["result"]["isError"])
+                self.assertFalse(call(2)["result"]["isError"])
+                limited = call(3)
+                self.assertTrue(limited["result"]["isError"])
+                payload = json.loads(limited["result"]["content"][0]["text"])
+                self.assertEqual(payload["error"]["kind"], "rate_limited")
+                self.assertGreaterEqual(payload["error"]["retry_after_seconds"], 1)
+        finally:
+            mcp._reset_rate_limiter()
+
     def test_tools_list_contains_router_tools(self):
         response = mcp.handle_request({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
         names = {tool["name"] for tool in response["result"]["tools"]}
