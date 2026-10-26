@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import dataclasses
 import enum
 import fcntl
 import getpass
+import io
 import ipaddress
 import json
 import os
@@ -2163,15 +2165,7 @@ def cmd_device_vpn(args: argparse.Namespace) -> None:
 def cmd_device_dispatch(args: argparse.Namespace) -> None:
     if not args.device_args:
         raise SystemExit("Usage: tplinkctl device QUERY or tplinkctl device <access|reserve|release|block|unblock|vpn> ...")
-    commands = {
-        "show": build_device_show_parser,
-        "access": build_device_access_parser,
-        "reserve": build_device_reserve_parser,
-        "release": build_device_release_parser,
-        "block": build_device_block_parser,
-        "unblock": build_device_unblock_parser,
-        "vpn": build_device_vpn_parser,
-    }
+    commands = device_action_parsers()
     access_subcommands = {"status", "on", "off"}
     if len(args.device_args) >= 1 and args.device_args[0] in commands and args.device_args[0] == "access":
         # e.g. "device access" / "device access status" -> access_state defaults to status
@@ -2889,84 +2883,157 @@ def schema_command_name(command: str) -> str:
     return " ".join(tokens) or command.split()[0]
 
 
+# Commands that write local files rather than router state.
+LOCAL_WRITE_COMMANDS = {"config set", "state save"}
+
+
+SCHEMA_PLACEHOLDERS = {"enabled": "on"}
+
+
+def command_operation(row: dict[str, Any]) -> str | None:
+    """The policy operation id a command resolves to, using placeholder values
+    for required positionals. None for command groups that need a subcommand."""
+    argv = row["name"].split()
+    for arg in row["args"]:
+        if arg["required"] and not arg["name"].startswith("--"):
+            argv.append(arg["enum"][0] if arg.get("enum") else SCHEMA_PLACEHOLDERS.get(arg["name"], "fixture"))
+    try:
+        with contextlib.redirect_stderr(io.StringIO()):
+            parsed = build_parser().parse_args(argv)
+    except SystemExit:
+        return None
+    return operation_id(parsed)
+
+
+def command_mutates(row: dict[str, Any], children: list[dict[str, Any]]) -> bool:
+    """True when the command can change router or local state.
+
+    Derived from the same operation ids the policy profiles gate, plus
+    confirmation flags and local writers, so it cannot disagree with policy.
+    """
+    if row["name"] in LOCAL_WRITE_COMMANDS or {"--yes", "--plan"} & {arg["name"] for arg in row["args"]}:
+        return True
+    operation = command_operation(row)
+    if operation is None:
+        if not children:  # fail closed: an unparseable leaf must not be reported as safe
+            raise RuntimeError(f"Cannot classify command `{row['name']}`; add a schema placeholder")
+        return any(command_mutates(child, []) for child in children)  # a group
+    return operation in MUTATION_OPERATIONS
+
+
+def schema_arg(action: argparse.Action) -> dict[str, Any] | None:
+    if isinstance(action, (argparse._HelpAction, argparse._VersionAction, argparse._SubParsersAction)):
+        return None
+    if action.help == argparse.SUPPRESS:
+        return None
+    if action.option_strings:
+        name = max(action.option_strings, key=len)
+    else:
+        name = action.dest
+    if isinstance(action, (argparse._StoreTrueAction, argparse._StoreFalseAction, argparse._StoreConstAction)):
+        arg_type = "boolean"
+    elif action.nargs in ("*", "+", argparse.REMAINDER):
+        arg_type = "string[]"
+    elif action.type is int:
+        arg_type = "integer"
+    else:
+        arg_type = "string"
+    if action.option_strings:
+        required = bool(action.required)
+    else:
+        # Decide from nargs: argparse before 3.12 marks nargs="*" positionals
+        # as required, which would make the schema vary by Python version.
+        required = action.nargs not in ("?", "*", argparse.REMAINDER)
+    entry: dict[str, Any] = {"name": name, "type": arg_type, "required": required}
+    if action.choices is not None:
+        entry["enum"] = [str(choice) for choice in action.choices]
+    elif action.type is connection_arg:
+        entry["enum"] = [item.value for item in Connection if item is not Connection.UNKNOWN]
+    elif action.type is vpn_arg:
+        entry["enum"] = [item.value for item in VPN]
+    if arg_type != "boolean" and action.default not in (None, argparse.SUPPRESS, [], ""):
+        entry["default"] = action.default
+    if action.help:
+        entry["description"] = action.help
+    return entry
+
+
+def parser_commands() -> list[dict[str, Any]]:
+    """Every invocable command in the real argparse tree, in definition order.
+
+    The schema and docs/commands.md are generated from this, so they cannot
+    drift from what the CLI actually accepts.
+    """
+    rows: list[dict[str, Any]] = []
+
+    def visit(parser: argparse.ArgumentParser, prefix: str) -> None:
+        for action in parser._actions:
+            if not isinstance(action, argparse._SubParsersAction):
+                continue
+            helps = {choice.dest: choice.help for choice in action._choices_actions}
+            for name, sub in action.choices.items():
+                full = f"{prefix} {name}".strip()
+                args = [arg for arg in (schema_arg(a) for a in sub._actions) if arg]
+                if full == "device":
+                    args = [arg for arg in args if arg["name"] != "device_args"]
+                    args.insert(0, {"name": "query", "type": "string", "required": False,
+                                    "description": "hostname substring, IP address, or MAC address; omit to list actions"})
+                rows.append({"name": full, "description": helps.get(name) or sub.description or "", "args": args})
+                visit(sub, full)
+                if full == "device":
+                    for verb, build in device_action_parsers().items():
+                        action_parser = build()
+                        rows.append({
+                            "name": f"device {verb}",
+                            "description": action_parser.description or "",
+                            "args": [arg for arg in (schema_arg(a) for a in action_parser._actions) if arg],
+                        })
+
+    visit(build_parser(), "")
+    return rows
+
+
 def schema_document(command_path: list[str] | None = None) -> dict[str, Any]:
-    commands: list[dict[str, Any]] = [
-        {
-            "name": "schema",
-            "description": "Emit the clispec v0.2 machine-readable CLI contract. Offline, no auth.",
-            "mutating": False,
-            "stability": "stable",
-            "args": [
-                {
-                    "name": "command_path",
-                    "type": "string[]",
-                    "required": False,
-                    "description": "Optional command path that narrows the document to a subtree.",
-                }
-            ],
-            "output_fields": [
+    capabilities: dict[str, dict[str, Any]] = {}
+    for cap in CAPABILITIES:
+        capabilities.setdefault(schema_command_name(str(cap["command"])), cap)
+    commands: list[dict[str, Any]] = []
+    rows = parser_commands()
+    for row in rows:
+        name = row["name"]
+        cap = capabilities.get(name) or capabilities.get(name.split()[0]) or {}
+        mutating = command_mutates(row, children=[r for r in rows if r["name"].startswith(name + " ")])
+        entry: dict[str, Any] = {
+            "name": name,
+            "description": row["description"],
+            "mutating": mutating,
+            "stability": "experimental" if cap.get("status") == "firmware_error" else "stable",
+        }
+        if cap.get("note"):
+            entry["note"] = cap["note"]
+        if row["args"]:
+            entry["args"] = row["args"]
+        if name == "schema":
+            entry["output_fields"] = [
                 {"name": "clispec", "type": "string", "description": "CLI Spec version this document conforms to."},
                 {"name": "name", "type": "string"},
                 {"name": "version", "type": "string"},
                 {"name": "commands", "type": "array"},
                 {"name": "errors", "type": "array"},
-            ],
-            "example": {"args": []},
-        }
-    ]
-    seen = {"schema"}
-    for cap in CAPABILITIES:
-        name = schema_command_name(str(cap["command"]))
-        if name in seen:
-            continue
-        seen.add(name)
-        cap_type = str(cap.get("type") or "")
-        mutating = cap_type == "mutation" or cap_type == "read_or_mutation" or bool(cap.get("requires_confirmation"))
-        if cap_type in {
-            "read",
-            "agent_discovery",
-            "audit_read",
-            "local_state",
-            "read_monitor",
-            "local_discovery",
-            "advanced_read",
-            "demo_report",
-            "external_network_test",
-        }:
-            mutating = False
-        stability = "experimental" if cap.get("status") == "firmware_error" else "stable"
-        entry: dict[str, Any] = {
-            "name": name,
-            "description": cap.get("note") or cap["id"],
-            "mutating": mutating,
-            "stability": stability,
-        }
-        args: list[dict[str, Any]] = []
-        if mutating:
-            args.append({"name": "--plan", "type": "boolean", "description": "Show the planned change without mutating router state."})
-            args.append({"name": "--dry-run", "type": "boolean", "description": "Alias for --plan."})
-            args.append({"name": "--yes", "type": "boolean", "description": "Confirm a mutation. Required without a TTY."})
-        if args:
-            entry["args"] = args
+            ]
+            entry["example"] = {"args": []}
         commands.append(entry)
     if command_path:
         prefix = " ".join(command_path)
         commands = [item for item in commands if item["name"] == prefix or item["name"].startswith(prefix + " ")]
+    global_args = [arg for arg in (schema_arg(a) for a in build_parser()._actions) if arg]
     return {
         "clispec": "0.2",
         "name": "tplinkctl",
         "version": __version__,
         "description": "CLI and MCP server for a local TP-Link Archer BE-series router.",
         "command_layout": "flat",
-        "global_args": [
-            {"name": "--json", "type": "boolean", "description": "Print JSON to stdout."},
-            {"name": "--plain", "type": "boolean", "description": "Print stable TSV/key-value text to stdout."},
-            {"name": "--no-input", "type": "boolean", "description": "Never prompt; fail if required input is missing."},
-            {"name": "--profile", "type": "string", "enum": sorted(POLICY_PROFILES), "description": "Agent policy profile."},
-            {"name": "--reason", "type": "string", "description": "Short reason recorded in the audit log."},
-            {"name": "--enable-commands", "type": "string", "description": "Comma-separated command allowlist."},
-            {"name": "--disable-commands", "type": "string", "description": "Comma-separated command denylist."},
-        ],
+        "global_args": global_args,
         "commands": commands,
         "x-tplinkctl-tools": tool_manifest()["tools"],
         "errors": [{"kind": kind, **meta} for kind, meta in ERROR_CATALOG.items()],
@@ -3403,6 +3470,19 @@ def build_device_vpn_parser() -> argparse.ArgumentParser:
     parser.add_argument("--yes", action="store_true", help="confirm VPN client device change")
     parser.set_defaults(func=cmd_device_vpn)
     return parser
+
+
+def device_action_parsers() -> dict[str, Any]:
+    """`device <action>` parsers; `device` takes REMAINDER args and dispatches here."""
+    return {
+        "show": build_device_show_parser,
+        "access": build_device_access_parser,
+        "reserve": build_device_reserve_parser,
+        "release": build_device_release_parser,
+        "block": build_device_block_parser,
+        "unblock": build_device_unblock_parser,
+        "vpn": build_device_vpn_parser,
+    }
 
 
 def build_parser() -> argparse.ArgumentParser:

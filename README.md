@@ -264,6 +264,11 @@ tplinkctl schema device
 tplinkctl schema wifi-config
 ```
 
+The schema is generated from the CLI's own argument parser, so every command,
+flag, type, choice and default it lists is one the binary accepts. The
+human-readable [command reference](docs/commands.md) is rendered from the same
+document (`make docs`), and `make contract` fails if it is stale.
+
 ### Semantic Exit Codes
 Failures write a single-line JSON error envelope as the **last line of stderr**:
 

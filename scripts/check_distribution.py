@@ -16,7 +16,7 @@ def check(directory):
     with zipfile.ZipFile(wheels[0]) as wheel:
         names = set(wheel.namelist())
         required = {'tplink_admin/' + name + '.py' for name in
-                    ('__init__', '__main__', 'cli', 'mcp', 'api', 'registry', 'openapi')}
+                    ('__init__', '__main__', 'cli', 'mcp', 'api', 'registry', 'openapi', 'clidoc')}
         if not required <= names:
             raise ValueError('Wheel is missing runtime modules')
         profiles = {'tplink_admin/profiles/' + name + '.json' for name in
@@ -32,7 +32,7 @@ def check(directory):
     with tarfile.open(sources[0]) as source:
         members = {m.name.split('/', 1)[1]: m for m in source.getmembers() if '/' in m.name}
         required = {'tests/http_router.py', 'tests/test_http.py', 'Makefile', 'tpadmin.py',
-                    'docs/openapi.json', 'docs/HTTP_API.md', 'docs/forge.md',
+                    'docs/openapi.json', 'docs/commands.md', 'docs/HTTP_API.md', 'docs/forge.md',
                     'scripts/forge_generate.py', 'scripts/forge_test.py',
                     'tooling/forge/pins.json', 'tooling/forge/smoke.mjs',
                     'tooling/forge/tsconfig.json', 'examples/bundles/index-BOBVatjl.js',

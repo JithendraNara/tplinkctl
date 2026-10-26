@@ -1178,3 +1178,76 @@ class CliTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SchemaContractTests(unittest.TestCase):
+    """`tplinkctl schema` and docs/commands.md are generated from the parser."""
+
+    def rows(self):
+        return cli.parser_commands()
+
+    def test_schema_lists_every_parser_command(self):
+        names = [row["name"] for row in self.rows()]
+        self.assertEqual(len(names), len(set(names)))
+        schema_names = [item["name"] for item in cli.schema_document()["commands"]]
+        self.assertEqual(schema_names, names)
+        # Commands the capability-derived schema used to omit.
+        for name in ("ipv4", "leases", "reservations", "doctor", "clients", "vpn",
+                     "config set", "state save", "state diff", "led on", "device show"):
+            self.assertIn(name, names)
+
+    def test_every_leaf_command_parses_and_is_classified(self):
+        rows = self.rows()
+        for row in rows:
+            children = [r for r in rows if r["name"].startswith(row["name"] + " ")]
+            with self.subTest(command=row["name"]):
+                if not children:
+                    self.assertIsNotNone(cli.command_operation(row))
+                self.assertIsInstance(cli.command_mutates(row, children), bool)
+
+    def test_mutating_flag_agrees_with_read_only_policy(self):
+        # Documented exceptions: read-only blocks these non-mutating commands
+        # (external traffic / local config), and allows these local writers.
+        blocked_but_safe = {"speedtest", "config path", "config show"}
+        allowed_local_writes = {"state save", "device access"}  # device access placeholder is `status`
+        rows = self.rows()
+        for row in rows:
+            operation = cli.command_operation(row)
+            if operation is None:
+                continue
+            children = [r for r in rows if r["name"].startswith(row["name"] + " ")]
+            mutating = cli.command_mutates(row, children)
+            allowed = cli.profile_denial("read-only", row["name"].split()[0], operation) is None
+            with self.subTest(command=row["name"], operation=operation):
+                if row["name"] in blocked_but_safe:
+                    self.assertFalse(mutating)
+                    self.assertFalse(allowed)
+                elif row["name"] in allowed_local_writes:
+                    self.assertTrue(mutating)
+                else:
+                    self.assertNotEqual(mutating, allowed)
+
+    def test_router_mutations_are_marked_mutating(self):
+        by_name = {item["name"]: item for item in cli.schema_document()["commands"]}
+        for name in ("raw", "reboot", "wifi", "vpn", "vpn-client", "device block", "led off", "wifi-config"):
+            self.assertTrue(by_name[name]["mutating"], name)
+        for name in ("status", "read", "devices", "device show", "led status", "schema"):
+            self.assertFalse(by_name[name]["mutating"], name)
+
+    def test_args_carry_real_types_and_values(self):
+        by_name = {item["name"]: item for item in cli.schema_document()["commands"]}
+        args = {a["name"]: a for a in by_name["devices"]["args"]}
+        self.assertEqual(args["--top"]["type"], "integer")
+        self.assertEqual(args["--active"]["type"], "boolean")
+        self.assertEqual(args["--sort"]["default"], "name")
+        vpn = {a["name"]: a for a in by_name["vpn"]["args"]}
+        self.assertEqual(vpn["vpn"]["enum"], [item.value for item in cli.VPN])
+        self.assertTrue(vpn["vpn"]["required"])
+        globals_ = {a["name"]: a for a in cli.schema_document()["global_args"]}
+        self.assertEqual(globals_["--profile"]["enum"], sorted(cli.POLICY_PROFILES))
+        self.assertEqual(globals_["--json"]["type"], "boolean")
+
+    def test_command_reference_artifact_is_current(self):
+        from tplink_admin import clidoc
+        self.assertEqual(Path("docs/commands.md").read_text(encoding="utf-8"), clidoc.render())
+        self.assertEqual(clidoc.main(["--check", "docs/commands.md"]), 0)
