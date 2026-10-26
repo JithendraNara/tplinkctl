@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- MCP stdio transport now uses newline-delimited JSON (the framing every real MCP client expects) instead of Content-Length framing; older Content-Length-framed input is still accepted.
+
+### Added
+
+- MCP spec alignment (#17): protocol-version negotiation across 2024-11-05…2025-11-25 with an explicit unsupported-version error, server `instructions`, honest `listChanged`, top-level `outputSchema` + `structuredContent` (array payloads wrapped as `{"items": [...]}` per MCP's object rule), refined tool annotations (`idempotentHint`/`openWorldHint`, plan tools no longer flagged destructive), silent notification handling, opt-in `tools/list` pagination (`TPLINK_MCP_PAGE_SIZE`), and per-tool rate limiting (`TPLINK_MCP_RATE_LIMIT_PER_MINUTE`, tighter `TPLINK_MCP_EXPENSIVE_RATE_LIMIT_PER_MINUTE` for `doctor_deep`/`watch`).
+
 ## v0.6.0 - 2026-10-25
 
 ### Added

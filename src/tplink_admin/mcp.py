@@ -14,13 +14,30 @@ import io
 import json
 import os
 import sys
+import time
 from collections.abc import Callable
 from typing import Any
 
 from . import __version__, cli
 
 SERVER_NAME = "tplinkctl-mcp"
-PROTOCOL_VERSION = "2024-11-05"
+# Newest first. 2026-07-28 (stateless, server/discover) is intentionally not
+# claimed yet; see issue #17 for the recorded decision.
+SUPPORTED_PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
+PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[0]
+UNSUPPORTED_PROTOCOL_VERSION = -32022
+
+SERVER_INSTRUCTIONS = """\
+tplinkctl manages one home TP-Link router. Rules for every tool call:
+- Prefer the *_plan tool before any mutation tool, and show the plan to the user.
+- Mutation tools require confirm=true, which means the user explicitly agreed
+  after seeing the plan — never set it on the user's behalf.
+- Tools are gated by the server's permission profile; a profile error means
+  the operation is not allowed here, not that it should be retried differently.
+- Do not surface device MAC addresses, credentials, or private keys unless the
+  user explicitly asks for that specific value.
+- Read-only status tools are safe to call whenever current router state matters;
+  do not guess state from earlier calls."""
 
 
 def base_argv() -> list[str]:
@@ -300,11 +317,40 @@ TOOL_BUILDERS: dict[str, Callable[[dict[str, Any]], list[str]]] = {
 }
 
 
+def tool_annotations(item: dict[str, Any]) -> dict[str, bool]:
+    if item["read_only"]:
+        # Status, plan, and discovery tools never change router state.
+        return {"readOnlyHint": True, "destructiveHint": False,
+                "idempotentHint": True, "openWorldHint": False}
+    return {
+        "readOnlyHint": False,
+        # device_unblock restores access rather than destroying state.
+        "destructiveHint": item["name"] != "device_unblock",
+        "idempotentHint": item["name"] == "device_unblock",
+        "openWorldHint": False,  # closed local router, not the open internet
+    }
+
+
+def mcp_output_schema(item: dict[str, Any]) -> dict[str, Any]:
+    """Adapt the registry schema to MCP's object-only outputSchema rule.
+
+    Through 2025-11-25 a tool's outputSchema must describe an object and
+    structuredContent must be one; registry tools whose CLI payload is a
+    top-level array are wrapped as {"items": [...]} on the MCP surface only.
+    """
+    schema = item["output_schema"]
+    if schema.get("type") == "object":
+        return schema
+    return {"type": "object", "properties": {"items": schema},
+            "required": ["items"], "additionalProperties": False}
+
+
 def tool_definitions() -> list[dict[str, Any]]:
     return [{
         "name": item["name"], "description": item["description"],
         "inputSchema": item["input_schema"],
-        "annotations": {"readOnlyHint": item["read_only"], "destructiveHint": not item["read_only"]},
+        "outputSchema": mcp_output_schema(item),
+        "annotations": tool_annotations(item),
         "_meta": {"tplinkctl": {key: item[key] for key in (
             "risk", "profiles", "plan_operation", "rollback_contract", "local_only", "output_schema")}},
     } for item in cli.tool_manifest()["tools"]]
@@ -330,37 +376,153 @@ def call_tool(name: str, arguments: dict[str, Any] | None = None) -> dict[str, A
     if builder is None:
         raise ValueError(f"Unknown tool `{name}`")
     output = run_cli_json(builder(arguments))
-    return {"content": [{"type": "text", "text": output or "null"}], "isError": False}
+    result: dict[str, Any] = {"content": [{"type": "text", "text": output or "null"}], "isError": False}
+    try:
+        # Standard structured output (2025-06-18+); the text block above stays
+        # as the serialized CLI form for older clients. Array payloads are
+        # wrapped to satisfy MCP's object-only structuredContent rule.
+        parsed = json.loads(output)
+        if isinstance(parsed, list):
+            parsed = {"items": parsed}
+        elif not isinstance(parsed, dict):
+            parsed = {"value": parsed}
+        result["structuredContent"] = parsed
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return result
+
+
+# --- Rate limiting (security best practice: servers rate-limit invocations) ---
+EXPENSIVE_TOOLS = {"doctor_deep", "watch"}
+_RATE_WINDOW_SECONDS = 60.0
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return max(0, int(os.getenv(name, "") or default))
+    except ValueError:
+        return default
+
+
+class RateLimiter:
+    """Sliding-window per-tool limiter; limits come from the environment."""
+
+    def __init__(self) -> None:
+        self._calls: dict[str, list[float]] = {}
+
+    def reset(self) -> None:
+        self._calls.clear()
+
+    def check(self, name: str) -> int | None:
+        """Return retry-after seconds if `name` is over budget, else None."""
+        limit = _env_int(
+            "TPLINK_MCP_EXPENSIVE_RATE_LIMIT_PER_MINUTE"
+            if name in EXPENSIVE_TOOLS else "TPLINK_MCP_RATE_LIMIT_PER_MINUTE",
+            6 if name in EXPENSIVE_TOOLS else 300,
+        )
+        if limit <= 0:
+            return None
+        now = time.monotonic()
+        window = [t for t in self._calls.get(name, []) if now - t < _RATE_WINDOW_SECONDS]
+        if len(window) >= limit:
+            self._calls[name] = window
+            return max(1, int(_RATE_WINDOW_SECONDS - (now - window[0])) + 1)
+        window.append(now)
+        self._calls[name] = window
+        return None
+
+
+_RATE_LIMITER = RateLimiter()
+
+
+def _reset_rate_limiter() -> None:
+    _RATE_LIMITER.reset()
 
 
 def error_response(request_id: Any, code: int, message: str) -> dict[str, Any]:
     return {"jsonrpc": "2.0", "id": request_id, "error": {"code": code, "message": message}}
 
 
+def negotiate_protocol_version(params: dict[str, Any]) -> str | None:
+    """Return the version to speak, or None if the client's is unsupported."""
+    requested = params.get("protocolVersion")
+    if requested is None:
+        return PROTOCOL_VERSION
+    if requested in SUPPORTED_PROTOCOL_VERSIONS:
+        return str(requested)
+    return None
+
+
+def tools_list_result(params: dict[str, Any]) -> dict[str, Any] | dict[str, Any]:
+    tools = tool_definitions()
+    cursor = params.get("cursor")
+    offset = 0
+    if cursor is not None:
+        try:
+            offset = int(str(cursor))
+        except ValueError:
+            return {"error": {"code": -32602, "message": f"Invalid cursor: {cursor!r}"}}
+        if offset < 0 or offset > len(tools):
+            return {"error": {"code": -32602, "message": f"Invalid cursor: {cursor!r}"}}
+    page_size = _env_int("TPLINK_MCP_PAGE_SIZE", 0)
+    if page_size <= 0:
+        if offset:
+            return {"error": {"code": -32602, "message": f"Invalid cursor: {cursor!r}"}}
+        return {"tools": tools}
+    result: dict[str, Any] = {"tools": tools[offset:offset + page_size]}
+    if offset + page_size < len(tools):
+        result["nextCursor"] = str(offset + page_size)
+    return result
+
+
 def handle_request(message: dict[str, Any]) -> dict[str, Any] | None:
+    # Notifications (no id) must never be answered, whatever the method.
+    if "id" not in message:
+        return None
     request_id = message.get("id")
     method = message.get("method")
     params = message.get("params") or {}
 
-    if method == "notifications/initialized":
-        return None
     if method == "initialize":
+        version = negotiate_protocol_version(params)
+        if version is None:
+            return {
+                "jsonrpc": "2.0", "id": request_id,
+                "error": {
+                    "code": UNSUPPORTED_PROTOCOL_VERSION,
+                    "message": "Unsupported protocol version",
+                    "data": {"supported": list(SUPPORTED_PROTOCOL_VERSIONS),
+                             "requested": params.get("protocolVersion")},
+                },
+            }
         return {
             "jsonrpc": "2.0",
             "id": request_id,
             "result": {
-                "protocolVersion": PROTOCOL_VERSION,
-                "capabilities": {"tools": {}},
+                "protocolVersion": version,
+                "capabilities": {"tools": {"listChanged": False}},
                 "serverInfo": {"name": SERVER_NAME, "version": __version__},
+                "instructions": SERVER_INSTRUCTIONS,
             },
         }
     if method == "ping":
         return {"jsonrpc": "2.0", "id": request_id, "result": {}}
     if method == "tools/list":
-        return {"jsonrpc": "2.0", "id": request_id, "result": {"tools": tool_definitions()}}
+        listed = tools_list_result(params)
+        if "error" in listed:
+            return {"jsonrpc": "2.0", "id": request_id, "error": listed["error"]}
+        return {"jsonrpc": "2.0", "id": request_id, "result": listed}
     if method == "tools/call":
+        name = str(params.get("name", ""))
+        retry_after = _RATE_LIMITER.check(name)
+        if retry_after is not None:
+            payload = {"error": {"kind": "rate_limited",
+                                 "message": f"Rate limit exceeded for {name}; retry after {retry_after}s.",
+                                 "retry_after_seconds": retry_after}}
+            result = {"content": [{"type": "text", "text": json.dumps(payload)}], "isError": True}
+            return {"jsonrpc": "2.0", "id": request_id, "result": result}
         try:
-            result = call_tool(str(params.get("name", "")), params.get("arguments") or {})
+            result = call_tool(name, params.get("arguments") or {})
         except cli.CliError as exc:
             # Preserve the machine-readable kind without returning arbitrary
             # upstream exception strings or details that may contain secrets.
