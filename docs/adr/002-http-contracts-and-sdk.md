@@ -103,8 +103,9 @@ match the package runtime dependencies.
 
 Legacy key material and identifying network fixtures were replaced with explicit
 synthetic values. This change does not erase prior Git history or establish
-whether legacy material was ever used on a router. CLI/MCP profile restrictions
-are opt-in; HTTP alone defaults to read-only. No live mutation was performed.
+whether legacy material was ever used on a router. At v0.6.0, CLI/MCP profile
+restrictions were opt-in and only HTTP defaulted to read-only; since #17 the MCP
+server also defaults to read-only, leaving only the interactive CLI opt-in. No live mutation was performed.
 
 ## Constraints
 

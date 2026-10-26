@@ -123,9 +123,10 @@ tplinkctl schema
 | `network-admin` | Read + `device`, `wifi`, `vpn`, `reboot` | Everything except raw escape hatches | `advanced.raw` |
 | `dangerous` | All (`*`) | All (`*`) | None (unrestricted) |
 
-CLI and MCP apply no profile restriction when neither their profile flag nor
-profile environment variables are set. Confirmation guards still apply. Set a
-profile explicitly for agents; only HTTP defaults to `read-only`.
+The CLI applies no profile restriction when neither `--profile` nor
+`TPLINK_PROFILE` is set; confirmation guards still apply. The MCP server and
+HTTP API default to `read-only`: set `TPLINK_MCP_PROFILE` (or `TPLINK_PROFILE`)
+explicitly to let an agent plan or perform mutations.
 
 Set policy profiles via CLI flag or environment variable:
 
@@ -164,7 +165,36 @@ tplinkctl --json events --tail 5
 
 `tplinkctl-mcp` exposes 33 tools over standard JSON-RPC stdio (no MCP SDK / FastMCP dependency — see `src/tplink_admin/mcp.py`). Mutating MCP tools require `confirm=true` in tool arguments.
 
-Protocol notes (#17): newline-delimited stdio framing; protocol versions 2024-11-05…2025-11-25 negotiated at `initialize` (unsupported versions get an explicit error); tools advertise `outputSchema` and return `structuredContent` (array payloads wrapped as `{"items": [...]}`); optional knobs: `TPLINK_MCP_PAGE_SIZE` (tools/list pagination, 0 = single page), `TPLINK_MCP_RATE_LIMIT_PER_MINUTE` (default 300/tool) and `TPLINK_MCP_EXPENSIVE_RATE_LIMIT_PER_MINUTE` (default 6, for `doctor_deep`/`watch`; 0 disables a limit).
+**Defaults to the `read-only` profile.** Without `TPLINK_MCP_PROFILE` (or
+`TPLINK_PROFILE`), plan and mutation tools return a `permission` error; the
+examples below opt into `device-admin`.
+
+Protocol notes:
+
+- Legacy-era MCP (initialize handshake), revisions 2024-11-05 through
+  2025-11-25. A supported requested version is echoed; any other request gets
+  2025-11-25 and the client decides whether to continue. Responses are shaped
+  for the negotiated revision (e.g. `annotations` from 2025-03-26,
+  `outputSchema`/`structuredContent`/`title` from 2025-06-18). Modern-era
+  (2026-07-28) clients probing `server/discover` get `-32601` and fall back.
+- Newline-delimited JSON-RPC on stdio; malformed lines get a JSON-RPC parse or
+  invalid-request error and the server keeps running. Batches are accepted only
+  when 2025-03-26 is negotiated (the only revision that defined them).
+  `tools/list` and `tools/call` before `initialize` are rejected.
+- Arguments are validated against each tool's `inputSchema` before any router
+  access. Unknown tools and malformed calls are JSON-RPC errors (`-32602`);
+  validation, permission and router failures are tool results with
+  `isError: true` and a machine-readable `kind`. Upstream exception text is
+  never returned; set `TPLINK_MCP_DEBUG=1` to log it (session tokens redacted)
+  to stderr.
+- Tools advertise `outputSchema` and return `structuredContent`; tools with
+  array payloads (`device_list`, `port_forward_list`, `mesh_devices`, `watch`)
+  return `{"items": [...]}` on MCP because MCP requires object results.
+- `watch` is bounded (`count` ≤ 60, `interval` ≤ 60s, total wait ≤ 120s).
+- Optional knobs: `TPLINK_MCP_PAGE_SIZE` (tools/list pagination, 0 = single
+  page), `TPLINK_MCP_RATE_LIMIT_PER_MINUTE` (default 300 per tool) and
+  `TPLINK_MCP_EXPENSIVE_RATE_LIMIT_PER_MINUTE` (default 6, for
+  `doctor_deep`/`watch`); 0 disables a limit.
 
 Add `tplinkctl-mcp` to your agent configuration:
 

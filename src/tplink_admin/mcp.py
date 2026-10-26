@@ -1,10 +1,13 @@
 """Small stdio JSON-RPC tool server for tplinkctl.
 
-This intentionally avoids an MCP SDK dependency. It speaks the core JSON-RPC
-methods used by MCP clients (`initialize`, `tools/list`, `tools/call`) and uses
-newline-delimited JSON on stdio, as required by the MCP stdio transport.
-Incoming Content-Length (LSP-style) framed messages are also accepted for
-backward compatibility with earlier builds of this server.
+This intentionally avoids an MCP SDK dependency. It implements the legacy
+(initialize-handshake) MCP era, protocol revisions 2024-11-05 through
+2025-11-25: `initialize`, `ping`, `tools/list` and `tools/call` over
+newline-delimited JSON-RPC on stdio. Responses are shaped for the negotiated
+revision. Content-Length (LSP-style) framed input from earlier builds of this
+server is still accepted. Modern-era (2026-07-28) clients probing
+`server/discover` receive -32601 and fall back to `initialize`, per that
+revision's stdio backward-compatibility rules.
 """
 
 from __future__ import annotations
@@ -13,6 +16,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import sys
 import time
 from collections.abc import Callable
@@ -25,15 +29,17 @@ SERVER_NAME = "tplinkctl-mcp"
 # claimed yet; see issue #17 for the recorded decision.
 SUPPORTED_PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[0]
-UNSUPPORTED_PROTOCOL_VERSION = -32022
+# Least privilege: without an explicit profile the MCP server is read-only.
+DEFAULT_PROFILE = "read-only"
 
 SERVER_INSTRUCTIONS = """\
 tplinkctl manages one home TP-Link router. Rules for every tool call:
 - Prefer the *_plan tool before any mutation tool, and show the plan to the user.
 - Mutation tools require confirm=true, which means the user explicitly agreed
   after seeing the plan — never set it on the user's behalf.
-- Tools are gated by the server's permission profile; a profile error means
-  the operation is not allowed here, not that it should be retried differently.
+- Tools are gated by the server's permission profile (read-only unless the
+  operator configured another); a permission error means the operation is not
+  allowed here, not that it should be retried differently.
 - Do not surface device MAC addresses, credentials, or private keys unless the
   user explicitly asks for that specific value.
 - Read-only status tools are safe to call whenever current router state matters;
@@ -42,9 +48,8 @@ tplinkctl manages one home TP-Link router. Rules for every tool call:
 
 def base_argv() -> list[str]:
     argv = ["--json", "--no-input"]
-    profile = os.getenv("TPLINK_MCP_PROFILE") or os.getenv(cli.PROFILE_ENV)
-    if profile:
-        argv.extend(["--profile", profile])
+    profile = os.getenv("TPLINK_MCP_PROFILE") or os.getenv(cli.PROFILE_ENV) or DEFAULT_PROFILE
+    argv.extend(["--profile", profile])
     return argv
 
 
@@ -317,43 +322,149 @@ TOOL_BUILDERS: dict[str, Callable[[dict[str, Any]], list[str]]] = {
 }
 
 
+# --- Tool metadata -----------------------------------------------------------
+
+# Registry `read_only` means "never changes router state" (it drives profiles and
+# HTTP). MCP annotations describe the tool's whole environment, so tools that
+# write local files are not read-only there.
+LOCAL_WRITE_TOOLS = {"state_snapshot"}
+
+_TITLE_WORDS = {
+    "wifi": "Wi-Fi", "ipv6": "IPv6", "vpn": "VPN", "led": "LED", "ddns": "DDNS",
+    "iptv": "IPTV", "nat": "NAT", "qos": "QoS", "wireguard": "WireGuard",
+}
+
+
+def tool_title(name: str) -> str:
+    return " ".join(_TITLE_WORDS.get(word, word.capitalize()) for word in name.split("_"))
+
+
 def tool_annotations(item: dict[str, Any]) -> dict[str, bool]:
+    """Spec-accurate hints (2025-11-25 ToolAnnotations definitions)."""
+    if item["name"] in LOCAL_WRITE_TOOLS:
+        # Adds a new snapshot file: not read-only, purely additive, and each
+        # call creates another snapshot.
+        return {"readOnlyHint": False, "destructiveHint": False,
+                "idempotentHint": False, "openWorldHint": False}
     if item["read_only"]:
-        # Status, plan, and discovery tools never change router state.
-        return {"readOnlyHint": True, "destructiveHint": False,
-                "idempotentHint": True, "openWorldHint": False}
-    return {
-        "readOnlyHint": False,
-        # device_unblock restores access rather than destroying state.
-        "destructiveHint": item["name"] != "device_unblock",
-        "idempotentHint": item["name"] == "device_unblock",
-        "openWorldHint": False,  # closed local router, not the open internet
-    }
+        # destructive/idempotent hints are only meaningful when readOnlyHint is false.
+        return {"readOnlyHint": True, "openWorldHint": False}
+    # Every router mutation sets a value or removes an entry: it overwrites or
+    # deletes existing state (destructive: not purely additive), and repeating
+    # it with the same arguments has no further effect (idempotent).
+    return {"readOnlyHint": False, "destructiveHint": True,
+            "idempotentHint": True, "openWorldHint": False}
+
+
+def wraps_array_output(item: dict[str, Any]) -> bool:
+    return item["output_schema"].get("type") != "object"
 
 
 def mcp_output_schema(item: dict[str, Any]) -> dict[str, Any]:
     """Adapt the registry schema to MCP's object-only outputSchema rule.
 
     Through 2025-11-25 a tool's outputSchema must describe an object and
-    structuredContent must be one; registry tools whose CLI payload is a
-    top-level array are wrapped as {"items": [...]} on the MCP surface only.
+    structuredContent must be one. Registry tools whose CLI payload is a
+    top-level array are wrapped as {"items": [...]} on the MCP surface only;
+    CLI and HTTP schemas stay truthful arrays.
     """
     schema = item["output_schema"]
-    if schema.get("type") == "object":
+    if not wraps_array_output(item):
         return schema
     return {"type": "object", "properties": {"items": schema},
             "required": ["items"], "additionalProperties": False}
 
 
-def tool_definitions() -> list[dict[str, Any]]:
-    return [{
-        "name": item["name"], "description": item["description"],
-        "inputSchema": item["input_schema"],
-        "outputSchema": mcp_output_schema(item),
-        "annotations": tool_annotations(item),
-        "_meta": {"tplinkctl": {key: item[key] for key in (
-            "risk", "profiles", "plan_operation", "rollback_contract", "local_only", "output_schema")}},
-    } for item in cli.tool_manifest()["tools"]]
+def _manifest() -> dict[str, dict[str, Any]]:
+    return {item["name"]: item for item in cli.tool_manifest()["tools"]}
+
+
+def tool_definitions(version: str = PROTOCOL_VERSION) -> list[dict[str, Any]]:
+    """Tool list shaped for the negotiated protocol version (lifecycle: both
+    parties MUST respect the negotiated version)."""
+    tools = []
+    for item in cli.tool_manifest()["tools"]:
+        tool: dict[str, Any] = {"name": item["name"], "description": item["description"],
+                                "inputSchema": item["input_schema"]}
+        if version >= "2025-03-26":
+            tool["annotations"] = tool_annotations(item)
+        if version >= "2025-06-18":
+            tool["title"] = tool_title(item["name"])
+            tool["outputSchema"] = mcp_output_schema(item)
+            tool["_meta"] = {"tplinkctl": {key: item[key] for key in (
+                "risk", "profiles", "plan_operation", "rollback_contract", "local_only", "output_schema")}}
+        tools.append(tool)
+    return tools
+
+
+# --- Tool execution ------------------------------------------------------------
+
+class ProtocolError(Exception):
+    """A JSON-RPC protocol error (unknown tool, malformed request)."""
+
+    def __init__(self, code: int, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+class ToolInputError(ValueError):
+    """Arguments failed validation; safe, actionable text for the model."""
+
+
+_STOK = re.compile(r";stok=[^/\s'\"]*")
+_INPUT_VALIDATORS: dict[str, Any] = {}
+MAX_WATCH_SECONDS = 120.0
+
+
+def _redact(text: str) -> str:
+    return _STOK.sub(";stok=<redacted>", text)
+
+
+def _log(message: str) -> None:
+    # stdio servers MAY log to stderr, but clients capture it into their own
+    # logs; always redact router session tokens.
+    print(f"tplinkctl-mcp: {_redact(message)}", file=sys.stderr, flush=True)
+
+
+def _log_failure(name: str, exc: BaseException) -> None:
+    # Exception text can carry router URLs, diagnostics, or secrets that
+    # pattern redaction cannot recognize, so it is only logged on explicit
+    # operator opt-in (TPLINK_MCP_DEBUG=1); the type name is always safe.
+    detail = f": {exc}" if os.getenv("TPLINK_MCP_DEBUG") == "1" else ""
+    _log(f"tool {name} failed: {type(exc).__name__}{detail}")
+
+
+def validate_arguments(item: dict[str, Any], arguments: dict[str, Any]) -> None:
+    from jsonschema import Draft202012Validator
+    from jsonschema.exceptions import best_match
+
+    name = item["name"]
+    validator = _INPUT_VALIDATORS.get(name)
+    if validator is None:
+        validator = _INPUT_VALIDATORS[name] = Draft202012Validator(item["input_schema"])
+    error = best_match(validator.iter_errors(arguments))
+    if error is not None:
+        where = "/".join(str(part) for part in error.absolute_path) or "arguments"
+        message = f"Invalid arguments for {name} ({where}): {error.message}"
+        if not item["read_only"] and "confirm" in error.message:
+            message += ". Mutations require confirm=true after the user approves the plan."
+        raise ToolInputError(message)
+    if name == "watch":
+        count = arguments.get("count", 1)
+        interval = arguments.get("interval", 0) or 0
+        if (count - 1) * interval > MAX_WATCH_SECONDS:
+            raise ToolInputError(
+                f"Invalid arguments for watch: (count - 1) * interval must be <= {MAX_WATCH_SECONDS:g}s "
+                "so a single call cannot block the server.")
+
+
+def _error_result(kind: str, message: str, **extra: Any) -> dict[str, Any]:
+    payload = {"error": {"kind": kind, "message": message, **extra}}
+    return {"content": [{"type": "text", "text": json.dumps(payload)}], "isError": True}
+
+
+class CommandFailed(Exception):
+    """A CLI command aborted with a free-form SystemExit message."""
 
 
 def run_cli_json(argv: list[str]) -> str:
@@ -365,31 +476,72 @@ def run_cli_json(argv: list[str]) -> str:
         except cli.CliError:
             raise
         except SystemExit as exc:
-            detail = stderr.getvalue().strip() or str(exc)
-            raise RuntimeError(detail) from exc
+            if isinstance(exc.code, int) or exc.code is None:
+                # argparse usage errors: an exit status plus an "error:" line
+                # about the client's own arguments.
+                detail = stderr.getvalue().strip()
+                raise ToolInputError(detail.splitlines()[-1] if detail else "Invalid arguments.") from exc
+            # Free-form runtime failures can interpolate upstream exception text
+            # (router URLs, session tokens), so they never cross the boundary.
+            raise CommandFailed(str(exc.code)) from exc
     return stdout.getvalue().strip()
 
 
-def call_tool(name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
-    arguments = arguments or {}
+def call_tool(name: str, arguments: dict[str, Any] | None = None,
+              version: str = PROTOCOL_VERSION) -> dict[str, Any]:
+    """Execute one tool. Raises ProtocolError for unknown tools; every other
+    failure becomes a sanitized Tool Execution Error result."""
+    arguments = {} if arguments is None else arguments
+    item = _manifest().get(name)
     builder = TOOL_BUILDERS.get(name)
-    if builder is None:
-        raise ValueError(f"Unknown tool `{name}`")
-    output = run_cli_json(builder(arguments))
-    result: dict[str, Any] = {"content": [{"type": "text", "text": output or "null"}], "isError": False}
+    if item is None or builder is None:
+        raise ProtocolError(-32602, f"Unknown tool: {name}")
     try:
-        # Standard structured output (2025-06-18+); the text block above stays
-        # as the serialized CLI form for older clients. Array payloads are
-        # wrapped to satisfy MCP's object-only structuredContent rule.
-        parsed = json.loads(output)
-        if isinstance(parsed, list):
-            parsed = {"items": parsed}
-        elif not isinstance(parsed, dict):
-            parsed = {"value": parsed}
-        result["structuredContent"] = parsed
+        validate_arguments(item, arguments)
+        argv = builder(arguments)
+    except ValueError as exc:  # ToolInputError and builder validation messages
+        return _error_result("usage", str(exc))
+    try:
+        output = run_cli_json(argv)
+    except cli.CliError as exc:
+        # Machine-readable kind without upstream exception text, which may
+        # contain secrets or router diagnostics.
+        entry = cli.ERROR_CATALOG[exc.kind]
+        return _error_result(exc.kind, entry["description"], retryable=entry["retryable"])
+    except ToolInputError as exc:
+        return _error_result("usage", str(exc))
+    except CommandFailed as exc:
+        # Same contract as the HTTP transport's SystemExit mapping.
+        _log_failure(name, exc)
+        return _error_result("router", "Command could not complete; inspect router state before retrying",
+                             retryable=False)
+    except Exception as exc:  # noqa: BLE001 - sanitize everything else
+        import requests
+
+        _log_failure(name, exc)
+        if isinstance(exc, requests.RequestException):
+            return _error_result("router", "Router unreachable or the request failed.", retryable=True)
+        return _error_result("internal", cli.ERROR_CATALOG["internal"]["description"], retryable=False)
+
+    if version < "2025-06-18":
+        return {"content": [{"type": "text", "text": output or "null"}], "isError": False}
+    try:
+        payload = json.loads(output)
     except (json.JSONDecodeError, TypeError):
-        pass
-    return result
+        _log(f"tool {name} produced non-JSON output")
+        return _error_result("internal", cli.ERROR_CATALOG["internal"]["description"], retryable=False)
+    if wraps_array_output(item):
+        structured: Any = {"items": payload}
+        text = json.dumps(structured, indent=2, sort_keys=True)
+    else:
+        structured, text = payload, output
+    if not isinstance(structured, dict):
+        # Declared object schema but non-object payload: a server bug. Fail
+        # loudly instead of emitting structured content that violates it.
+        _log(f"tool {name} payload type {type(payload).__name__} violates its output schema")
+        return _error_result("internal", cli.ERROR_CATALOG["internal"]["description"], retryable=False)
+    # Tools SHOULD return the serialized structured content as a text block.
+    return {"content": [{"type": "text", "text": text}], "structuredContent": structured, "isError": False}
 
 
 # --- Rate limiting (security best practice: servers rate-limit invocations) ---
@@ -439,35 +591,54 @@ def _reset_rate_limiter() -> None:
     _RATE_LIMITER.reset()
 
 
-def error_response(request_id: Any, code: int, message: str) -> dict[str, Any]:
-    return {"jsonrpc": "2.0", "id": request_id, "error": {"code": code, "message": message}}
+# --- JSON-RPC / lifecycle ------------------------------------------------------
+
+PARSE_ERROR, INVALID_REQUEST, METHOD_NOT_FOUND, INVALID_PARAMS = -32700, -32600, -32601, -32602
 
 
-def negotiate_protocol_version(params: dict[str, Any]) -> str | None:
-    """Return the version to speak, or None if the client's is unsupported."""
+class Session:
+    """Per-connection state for one stdio process.
+
+    `handle_request` without a session behaves as an already-initialized
+    session at the latest version (unit tests, in-process callers).
+    """
+
+    def __init__(self, *, initialized: bool = False, version: str | None = None) -> None:
+        self.initialized = initialized
+        self.version = version or PROTOCOL_VERSION
+
+
+def error_response(request_id: Any, code: int, message: str, data: Any = None) -> dict[str, Any]:
+    error: dict[str, Any] = {"code": code, "message": message}
+    if data is not None:
+        error["data"] = data
+    return {"jsonrpc": "2.0", "id": request_id, "error": error}
+
+
+def negotiate_protocol_version(params: dict[str, Any]) -> str:
+    """Lifecycle: echo a supported requested version; otherwise respond with
+    the latest version the server supports (the client decides to disconnect)."""
     requested = params.get("protocolVersion")
-    if requested is None:
-        return PROTOCOL_VERSION
-    if requested in SUPPORTED_PROTOCOL_VERSIONS:
-        return str(requested)
-    return None
+    if isinstance(requested, str) and requested in SUPPORTED_PROTOCOL_VERSIONS:
+        return requested
+    return PROTOCOL_VERSION
 
 
-def tools_list_result(params: dict[str, Any]) -> dict[str, Any] | dict[str, Any]:
-    tools = tool_definitions()
+def tools_list_result(params: dict[str, Any], version: str = PROTOCOL_VERSION) -> dict[str, Any]:
+    tools = tool_definitions(version)
     cursor = params.get("cursor")
     offset = 0
     if cursor is not None:
         try:
             offset = int(str(cursor))
         except ValueError:
-            return {"error": {"code": -32602, "message": f"Invalid cursor: {cursor!r}"}}
+            raise ProtocolError(INVALID_PARAMS, "Invalid cursor") from None
         if offset < 0 or offset > len(tools):
-            return {"error": {"code": -32602, "message": f"Invalid cursor: {cursor!r}"}}
+            raise ProtocolError(INVALID_PARAMS, "Invalid cursor")
     page_size = _env_int("TPLINK_MCP_PAGE_SIZE", 0)
     if page_size <= 0:
         if offset:
-            return {"error": {"code": -32602, "message": f"Invalid cursor: {cursor!r}"}}
+            raise ProtocolError(INVALID_PARAMS, "Invalid cursor")
         return {"tools": tools}
     result: dict[str, Any] = {"tools": tools[offset:offset + page_size]}
     if offset + page_size < len(tools):
@@ -475,108 +646,185 @@ def tools_list_result(params: dict[str, Any]) -> dict[str, Any] | dict[str, Any]
     return result
 
 
-def handle_request(message: dict[str, Any]) -> dict[str, Any] | None:
-    # Notifications (no id) must never be answered, whatever the method.
-    if "id" not in message:
-        return None
-    request_id = message.get("id")
-    method = message.get("method")
-    params = message.get("params") or {}
+def _valid_id(value: Any) -> bool:
+    # MCP: ids MUST be a string or integer and MUST NOT be null.
+    return isinstance(value, str) or (isinstance(value, int) and not isinstance(value, bool))
+
+
+def handle_request(message: Any, session: Session | None = None) -> dict[str, Any] | None:
+    session = session or Session(initialized=True)
+    if not isinstance(message, dict):
+        return error_response(None, INVALID_REQUEST, "Invalid Request")
+    has_id = "id" in message
+    request_id = message.get("id") if has_id and _valid_id(message.get("id")) else None
+    if "method" not in message and ("result" in message or "error" in message):
+        return None  # a response to a server request; this server sends none
+    if message.get("jsonrpc") != "2.0" or not isinstance(message.get("method"), str):
+        return None if not has_id else error_response(request_id, INVALID_REQUEST, "Invalid Request")
+    if not has_id:
+        return None  # notifications MUST NOT be answered, whatever the method
+    if not _valid_id(message["id"]):
+        return error_response(None, INVALID_REQUEST, "Invalid Request: id must be a string or integer")
+    method = message["method"]
+    params = message.get("params", {})
+    if params is None:
+        params = {}
+    if not isinstance(params, dict):
+        return error_response(request_id, INVALID_PARAMS, "Invalid params: params must be an object")
 
     if method == "initialize":
         version = negotiate_protocol_version(params)
-        if version is None:
-            return {
-                "jsonrpc": "2.0", "id": request_id,
-                "error": {
-                    "code": UNSUPPORTED_PROTOCOL_VERSION,
-                    "message": "Unsupported protocol version",
-                    "data": {"supported": list(SUPPORTED_PROTOCOL_VERSIONS),
-                             "requested": params.get("protocolVersion")},
-                },
-            }
+        session.initialized, session.version = True, version
         return {
             "jsonrpc": "2.0",
             "id": request_id,
             "result": {
                 "protocolVersion": version,
                 "capabilities": {"tools": {"listChanged": False}},
-                "serverInfo": {"name": SERVER_NAME, "version": __version__},
+                "serverInfo": server_info(version),
                 "instructions": SERVER_INSTRUCTIONS,
             },
         }
     if method == "ping":
         return {"jsonrpc": "2.0", "id": request_id, "result": {}}
-    if method == "tools/list":
-        listed = tools_list_result(params)
-        if "error" in listed:
-            return {"jsonrpc": "2.0", "id": request_id, "error": listed["error"]}
-        return {"jsonrpc": "2.0", "id": request_id, "result": listed}
-    if method == "tools/call":
-        name = str(params.get("name", ""))
+    if method not in {"tools/list", "tools/call"}:
+        return error_response(request_id, METHOD_NOT_FOUND, f"Method not found: {method}")
+    if not session.initialized:
+        # Deterministic failure instead of serving era-ambiguous methods without
+        # a negotiated version (2026-07-28 stdio backward-compatibility guidance).
+        return error_response(request_id, INVALID_REQUEST, "Server not initialized: send initialize first")
+    try:
+        if method == "tools/list":
+            return {"jsonrpc": "2.0", "id": request_id,
+                    "result": tools_list_result(params, session.version)}
+        name = params.get("name")
+        arguments = params.get("arguments")
+        if not isinstance(name, str) or not name:
+            raise ProtocolError(INVALID_PARAMS, "Invalid params: name must be a non-empty string")
+        if arguments is not None and not isinstance(arguments, dict):
+            raise ProtocolError(INVALID_PARAMS, "Invalid params: arguments must be an object")
+        if name not in TOOL_BUILDERS:
+            raise ProtocolError(INVALID_PARAMS, f"Unknown tool: {name}")
         retry_after = _RATE_LIMITER.check(name)
         if retry_after is not None:
-            payload = {"error": {"kind": "rate_limited",
-                                 "message": f"Rate limit exceeded for {name}; retry after {retry_after}s.",
-                                 "retry_after_seconds": retry_after}}
-            result = {"content": [{"type": "text", "text": json.dumps(payload)}], "isError": True}
-            return {"jsonrpc": "2.0", "id": request_id, "result": result}
-        try:
-            result = call_tool(name, params.get("arguments") or {})
-        except cli.CliError as exc:
-            # Preserve the machine-readable kind without returning arbitrary
-            # upstream exception strings or details that may contain secrets.
-            payload = {"error": {"kind": exc.kind, "message": cli.ERROR_CATALOG[exc.kind]["description"]}}
-            result = {"content": [{"type": "text", "text": json.dumps(payload)}], "isError": True}
-        except Exception as exc:
-            result = {"content": [{"type": "text", "text": f"{type(exc).__name__}: {exc}"}], "isError": True}
+            result = _error_result("rate_limited", f"Rate limit exceeded for {name}; retry after {retry_after}s.",
+                                   retry_after_seconds=retry_after, retryable=True)
+        else:
+            result = call_tool(name, arguments, session.version)
         return {"jsonrpc": "2.0", "id": request_id, "result": result}
-    return error_response(request_id, -32601, f"Method not found: {method}")
+    except ProtocolError as exc:
+        return error_response(request_id, exc.code, str(exc))
 
 
-def read_message(stream: Any) -> dict[str, Any] | None:
+def server_info(version: str = PROTOCOL_VERSION) -> dict[str, Any]:
+    info: dict[str, Any] = {"name": SERVER_NAME, "version": __version__}
+    if version >= "2025-06-18":
+        info["title"] = "TP-Link Router (tplinkctl)"
+    if version >= "2025-11-25":
+        info["description"] = "Plan-first, profile-gated management of a local TP-Link router."
+        info["websiteUrl"] = "https://github.com/JithendraNara/tplinkctl"
+    return info
+
+
+# --- stdio transport ------------------------------------------------------------
+
+_BLANK = object()
+_PARSE_ERROR = object()
+
+
+def read_message(stream: Any) -> Any:
+    """Return a decoded message, None at EOF, or a _BLANK/_PARSE_ERROR sentinel."""
     first = stream.readline()
     if not first:
         return None
     if isinstance(first, bytes):
-        first = first.decode("utf-8")
+        try:
+            first = first.decode("utf-8")
+        except UnicodeDecodeError:
+            return _PARSE_ERROR
     if first.startswith("Content-Length:"):
-        length = int(first.split(":", 1)[1].strip())
+        # Backward compatibility with earlier builds' LSP-style framing.
+        try:
+            length = int(first.split(":", 1)[1].strip())
+        except ValueError:
+            return _PARSE_ERROR
         while True:
             line = stream.readline()
             if isinstance(line, bytes):
-                line = line.decode("utf-8")
+                line = line.decode("utf-8", "replace")
             if line in {"\r\n", "\n", ""}:
                 break
         body = stream.read(length)
         if isinstance(body, bytes):
-            body = body.decode("utf-8")
-        return json.loads(body)
-    return json.loads(first)
+            body = body.decode("utf-8", "replace")
+        first = body
+    if not first.strip():
+        return _BLANK
+    try:
+        return json.loads(first)
+    except json.JSONDecodeError:
+        return _PARSE_ERROR
 
 
-def write_message(stream: Any, message: dict[str, Any]) -> None:
-    # MCP stdio transport: one JSON-RPC message per line, no Content-Length
-    # header. Real MCP clients (e.g. the official SDK) reject LSP framing.
-    body = json.dumps(message, separators=(",", ":"))
-    stream.write(body + "\n")
+def write_message(stream: Any, message: Any) -> None:
+    # MCP stdio: one JSON-RPC message (or 2025-03-26 batch) per line; json.dumps
+    # escapes control characters, so no embedded newlines.
+    stream.write(json.dumps(message, separators=(",", ":")) + "\n")
     stream.flush()
+
+
+def dispatch(raw: Any, session: Session) -> Any:
+    if raw is _PARSE_ERROR:
+        return error_response(None, PARSE_ERROR, "Parse error")
+    if isinstance(raw, list):
+        # JSON-RPC batching exists only in protocol 2025-03-26 (added there,
+        # removed in 2025-06-18), where receiving batches is a MUST.
+        if not (session.initialized and session.version == "2025-03-26") or not raw:
+            return error_response(None, INVALID_REQUEST, "Invalid Request: batches are not supported")
+        if any(isinstance(m, dict) and m.get("method") == "initialize" for m in raw):
+            return error_response(None, INVALID_REQUEST, "Invalid Request: initialize must not be batched")
+        responses = [r for r in (handle_request(m, session) for m in raw) if r is not None]
+        return responses or None
+    return handle_request(raw, session)
+
+
+def _finalize(response: Any, session: Session) -> Any:
+    """Shape id-less error responses for the negotiated revision.
+
+    When a request's id cannot be read, JSON-RPC 2.0 uses "id": null, but MCP
+    2025-11-25 makes the error id optional and non-null (the official TS SDK
+    rejects null). Older MCP schemas require a non-null id and have no valid
+    form, so they keep the JSON-RPC 2.0 null.
+    """
+    if (isinstance(response, dict) and "error" in response and response.get("id") is None
+            and session.version >= "2025-11-25"):
+        response = {k: v for k, v in response.items() if k != "id"}
+    return response
 
 
 def serve(input_stream: Any = None, output_stream: Any = None) -> None:
     input_stream = input_stream or sys.stdin.buffer
     output_stream = output_stream or sys.stdout
+    session = Session()
     while True:
-        message = read_message(input_stream)
-        if message is None:
+        raw = read_message(input_stream)
+        if raw is None:
             return
-        response = handle_request(message)
+        if raw is _BLANK:
+            continue
+        response = _finalize(dispatch(raw, session), session)
         if response is not None:
             write_message(output_stream, response)
 
 
 def main() -> int:
-    serve()
+    # Keep the protocol channel exclusive: move the real stdout to a private
+    # descriptor and point fd 1 at stderr, so stray writes from any library
+    # (print, C extensions, subprocesses) cannot corrupt the stream.
+    protocol_fd = os.dup(sys.stdout.fileno())
+    os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
+    with open(protocol_fd, "w", encoding="utf-8", newline="\n", closefd=True) as protocol_out:
+        serve(sys.stdin.buffer, protocol_out)
     return 0
 
 

@@ -341,7 +341,7 @@ class ContractTests(unittest.TestCase):
         items = {i["name"]: i for i in cli.tool_manifest()["tools"]}
         schema = cli.schema_document()
         self.assertEqual({i["name"]: i for i in schema["x-tplinkctl-tools"]}, items)
-        definitions = {i["name"]: i for i in mcp.handle_request({"id": 1, "method": "tools/list"})["result"]["tools"]}
+        definitions = {i["name"]: i for i in mcp.handle_request({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]}
         self.assertEqual(set(definitions), set(items))
         self.assertEqual(set(mcp.TOOL_BUILDERS), set(items))
         doc = openapi.document()
@@ -354,7 +354,10 @@ class ContractTests(unittest.TestCase):
             with self.subTest(name=name):
                 tool = definitions[name]
                 self.assertEqual(tool["inputSchema"], item["input_schema"])
-                self.assertEqual(tool["annotations"]["readOnlyHint"], item["read_only"])
+                # MCP annotations cover the whole environment: local-file writers are
+                # not read-only there even though they never change router state.
+                self.assertEqual(tool["annotations"]["readOnlyHint"],
+                                 item["read_only"] and name not in mcp.LOCAL_WRITE_TOOLS)
                 for key in ("risk", "profiles", "plan_operation", "rollback_contract", "local_only", "output_schema"):
                     self.assertEqual(tool["_meta"]["tplinkctl"][key], item[key])
                 if name in local:

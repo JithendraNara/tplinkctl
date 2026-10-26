@@ -2,13 +2,29 @@
 
 ## [Unreleased]
 
+### Breaking
+
+- `tplinkctl-mcp` now defaults to the `read-only` profile when neither `TPLINK_MCP_PROFILE` nor `TPLINK_PROFILE` is set. Previously an unset profile meant no restriction, so an agent could run mutations by passing `confirm=true` alone. Set `TPLINK_MCP_PROFILE=device-admin` (or broader) to restore mutation access deliberately.
+- MCP tools with array payloads (`device_list`, `port_forward_list`, `mesh_devices`, `watch`) return `{"items": [...]}` in both `structuredContent` and the text block, because MCP requires object results. CLI and HTTP output are unchanged.
+
 ### Fixed
 
-- MCP stdio transport now uses newline-delimited JSON (the framing every real MCP client expects) instead of Content-Length framing; older Content-Length-framed input is still accepted.
+- MCP stdio transport uses newline-delimited JSON, the framing MCP clients expect, instead of Content-Length framing. Content-Length-framed input is still accepted (#16).
+- MCP protocol conformance (#17), verified by a black-box harness against the official 2025-11-25, 2025-06-18, 2025-03-26 and 2024-11-05 JSON schemas and by the official Python (v2) and TypeScript SDK clients:
+  - Version negotiation follows the lifecycle rule: an unsupported requested version gets the server's latest supported version, not an error.
+  - Malformed input (invalid JSON, scalars, blank lines) no longer crashes the server; it returns JSON-RPC `-32700`/`-32600` errors. Null or boolean ids, missing `jsonrpc`, and non-object params are rejected.
+  - Batches are accepted only when 2025-03-26 is negotiated; elsewhere they are rejected rather than silently dropped.
+  - Unknown tools and malformed `tools/call` requests are JSON-RPC protocol errors (`-32602`), not tool results.
+  - Tool arguments are validated against `inputSchema` before any router access. Upstream exception text, which could include router URLs or session tokens, never reaches tool results. Opt-in debug logging (`TPLINK_MCP_DEBUG=1`) redacts tokens.
+  - `tools/list` and `tools/call` before `initialize` are rejected deterministically.
+  - Responses are shaped for the negotiated protocol revision.
+  - The `watch` output schema matches its array payload; `watch` duration is bounded; `audit_tail`/`state_diff` limits are capped.
+  - Annotations follow the spec definitions: read-only tools carry only `readOnlyHint`/`openWorldHint`; `state_snapshot` (writes files) is not read-only; router mutations are destructive and idempotent.
+  - Fd 1 is redirected to stderr, so stray library output cannot corrupt the protocol stream.
 
 ### Added
 
-- MCP spec alignment (#17): protocol-version negotiation across 2024-11-05…2025-11-25 with an explicit unsupported-version error, server `instructions`, honest `listChanged`, top-level `outputSchema` + `structuredContent` (array payloads wrapped as `{"items": [...]}` per MCP's object rule), refined tool annotations (`idempotentHint`/`openWorldHint`, plan tools no longer flagged destructive), silent notification handling, opt-in `tools/list` pagination (`TPLINK_MCP_PAGE_SIZE`), and per-tool rate limiting (`TPLINK_MCP_RATE_LIMIT_PER_MINUTE`, tighter `TPLINK_MCP_EXPENSIVE_RATE_LIMIT_PER_MINUTE` for `doctor_deep`/`watch`).
+- MCP server `instructions`, tool `title`, and `serverInfo` title/description/website; `outputSchema` and `structuredContent` on 2025-06-18+; opt-in `tools/list` pagination (`TPLINK_MCP_PAGE_SIZE`); per-tool rate limits (`TPLINK_MCP_RATE_LIMIT_PER_MINUTE`, plus a tighter `TPLINK_MCP_EXPENSIVE_RATE_LIMIT_PER_MINUTE` for `doctor_deep`/`watch`).
 
 ## v0.6.0 - 2026-10-25
 
