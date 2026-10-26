@@ -22,6 +22,10 @@
   - Annotations follow the spec definitions: read-only tools carry only `readOnlyHint`/`openWorldHint`; `state_snapshot` (writes files) is not read-only; router mutations are destructive and idempotent.
   - Fd 1 is redirected to stderr, so stray library output cannot corrupt the protocol stream.
 
+### Changed
+
+- Safety profiles are packaged JSON data (`src/tplink_admin/profiles/*.json`) instead of Python sets. Effective permissions are unchanged; tests now enforce that `read-only` allows no mutation, profiles widen monotonically, and every tool's advertised profiles match CLI enforcement.
+
 ### Added
 
 - `VISION.md` (scope, discuss-first areas, merge bar) and a PR template with an explicit validation line.

@@ -41,5 +41,9 @@ tplinkctl-api = "tplink_admin.api:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+# Safety profiles are runtime data; see src/tplink_admin/profiles/.
+tplink_admin = ["profiles/*.json"]
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
