@@ -5228,6 +5228,7 @@
             "type": "string"
           },
           "tail": {
+            "maximum": 1000,
             "minimum": 1,
             "type": "integer"
           }
@@ -5326,6 +5327,7 @@
             "type": "array"
           },
           "limit": {
+            "maximum": 1000,
             "minimum": 1,
             "type": "integer"
           },
@@ -5376,10 +5378,12 @@
             "type": "boolean"
           },
           "count": {
+            "maximum": 60,
             "minimum": 1,
             "type": "integer"
           },
           "interval": {
+            "maximum": 60,
             "minimum": 0,
             "type": "number"
           },
@@ -5405,8 +5409,28 @@
       "local_only": "Repeated samples and streams belong to the local CLI/MCP lifecycle.",
       "name": "watch",
       "output_schema": {
-        "additionalProperties": true,
-        "type": "object"
+        "items": {
+          "additionalProperties": true,
+          "properties": {
+            "generated_at": {
+              "type": "string"
+            },
+            "sequence": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "target": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "generated_at",
+            "target",
+            "sequence"
+          ],
+          "type": "object"
+        },
+        "type": "array"
       },
       "plan_operation": null,
       "profiles": [

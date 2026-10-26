@@ -13,7 +13,8 @@
 
 ## Agent Safety Rules
 
-- Start autonomous agents with `TPLINK_MCP_PROFILE=read-only` or `device-admin`.
+- `tplinkctl-mcp` defaults to `read-only`. Grant an agent more only by setting `TPLINK_MCP_PROFILE` explicitly (prefer `device-admin` over broader profiles).
+- MCP tool results never include upstream exception text; `TPLINK_MCP_DEBUG=1` logs it to stderr with router session tokens redacted. Leave it off unless debugging, because client hosts often persist server stderr.
 - Require a plan before mutation: `device_plan` or `tplinkctl device ... --plan`.
 - MCP mutation tools require `confirm=true`; agents should show the target hostname, IP, MAC, risk, and rollback before requesting confirmation.
 - Use `--reason` on plans and mutations so audit events explain why a change happened.

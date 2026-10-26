@@ -171,7 +171,7 @@ def tools() -> list[dict[str, Any]]:
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "tail": {"type": "integer", "minimum": 1},
+                    "tail": {"type": "integer", "minimum": 1, "maximum": 1000},
                     "operation": {"type": "string"},
                 },
                 "additionalProperties": False,
@@ -194,7 +194,7 @@ def tools() -> list[dict[str, Any]]:
                 "properties": {
                     "before": {"type": "string"},
                     "after": {"type": "string"},
-                    "limit": {"type": "integer", "minimum": 1},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
                     "raw": {"type": "boolean"},
                     "only": {"type": "string"},
                     "ignore": {"type": "array", "items": {"type": "string"}},
@@ -378,6 +378,10 @@ def data_schema(name: str) -> dict:
         return {"type": "array", "items": device}
     if name in {"port_forward_list", "mesh_devices"}:
         return {"type": "array", "items": OPEN_OBJECT}
+    if name == "watch":
+        return {"type": "array", "items": object_schema(
+            {"generated_at": STRING, "target": STRING, "sequence": {"type": "integer", "minimum": 1}},
+            extra=True)}
     if name == "router_status":
         return object_schema({key: OPEN_OBJECT for key in ("router", "wan", "wifi", "health")}, extra=True)
     if name in {"led_status", "led_set"}:
@@ -409,8 +413,8 @@ def enrich(entries: list[dict]) -> list[dict]:
                     "command": ["tplinkctl", "--json", "--no-input", "watch"], "read_only": True,
                     "input_schema": object_schema({
                         "target": {"type": "string", "enum": ["status", "devices", "speed", "health"]},
-                        "count": {"type": "integer", "minimum": 1},
-                        "interval": {"type": "number", "minimum": 0}, "active": BOOLEAN,
+                        "count": {"type": "integer", "minimum": 1, "maximum": 60},
+                        "interval": {"type": "number", "minimum": 0, "maximum": 60}, "active": BOOLEAN,
                         "top": {"type": "integer", "minimum": 1}}, [])})
     for item in entries:
         name = item["name"]
