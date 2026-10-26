@@ -24,6 +24,7 @@
 
 ### Added
 
+- `VISION.md` (scope, discuss-first areas, merge bar) and a PR template with an explicit validation line.
 - MCP server `instructions`, tool `title`, and `serverInfo` title/description/website; `outputSchema` and `structuredContent` on 2025-06-18+; opt-in `tools/list` pagination (`TPLINK_MCP_PAGE_SIZE`); per-tool rate limits (`TPLINK_MCP_RATE_LIMIT_PER_MINUTE`, plus a tighter `TPLINK_MCP_EXPENSIVE_RATE_LIMIT_PER_MINUTE` for `doctor_deep`/`watch`).
 
 ## v0.6.0 - 2026-10-25

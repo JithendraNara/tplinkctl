@@ -1,6 +1,6 @@
 # Contributing
 
-This repo is intentionally small and tool-shaped.
+This repo is intentionally small and tool-shaped. Read [VISION.md](VISION.md) first: it says what fits, what to discuss before building, and the merge bar.
 
 ## Development
 
@@ -27,3 +27,10 @@ Before turning a discovered endpoint into a first-class command:
 2. Verify it live with `tplinkctl read` or `tplinkctl raw`.
 3. Add a unit test with mocked router behavior.
 4. Document the command in `README.md`.
+
+## Pull Requests
+
+- Use Conventional Commit titles (`feat(cli): ...`, `fix(mcp): ...`).
+- Keep each PR to one coherent change. Describe the problem, the fix, the exact validation commands you ran, and anything you could not test.
+- Add user-visible changes to the `Unreleased` section of `CHANGELOG.md`.
+- Never include real network data (addresses, MACs, device names, locations, paths) in code, fixtures or PR text.
