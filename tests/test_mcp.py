@@ -467,9 +467,14 @@ class McpConformanceTests(unittest.TestCase):
             "router": requests.ConnectionError(
                 f"HTTPConnectionPool(host='{host}', port=80): url: /cgi-bin/luci/;stok={token}/admin/status"),
             "internal": RuntimeError(f"{token} /private/fixture/diagnostics"),
+            # CLI runtime failures raise free-form SystemExit text that can embed
+            # upstream exception detail (e.g. the doctor web-UI check).
+            "router-systemexit": SystemExit(
+                f"Router web UI check failed: HTTPConnectionPool(host='{host}') ;stok={token}/x"),
         }
-        for kind, exc in failures.items():
-            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as tmp, \
+        for label, exc in failures.items():
+            kind = label.split("-")[0]
+            with self.subTest(kind=label), tempfile.TemporaryDirectory() as tmp, \
                     patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp, **ADMIN}, clear=False), \
                     patch.object(cli, "build_router", side_effect=exc):
                 stderr = io.StringIO()
@@ -536,9 +541,15 @@ class McpConformanceTests(unittest.TestCase):
         }
         tools = {t["name"]: t for t in mcp.tool_definitions()}
         checked = 0
+        web_ui = {"ok": True, "deep": False, "url": "http://router.invalid/webpages/index.html",
+                  "status_code": 200, "meta": {}, "scripts": [], "stylesheets": []}
+        # doctor_deep's web check calls requests directly, outside build_router;
+        # keep this sweep offline (it previously reached a real LAN router).
         with tempfile.TemporaryDirectory() as tmp, \
                 patch.dict("os.environ", {"XDG_CONFIG_HOME": tmp, **{**ADMIN, "TPLINK_MCP_PROFILE": "dangerous"}}, clear=False), \
-                patch.object(cli, "build_router", side_effect=lambda *a, **k: FakeRouter()):
+                patch.object(cli, "build_router", side_effect=lambda *a, **k: FakeRouter()), \
+                patch.object(cli, "web_doctor_payload", return_value=web_ui), \
+                patch("requests.get", side_effect=AssertionError("network access in unit test")):
             for name in sorted(tools, key=lambda n: (n == "state_diff", n)):
                 with self.subTest(name=name):
                     result = mcp.call_tool(name, arguments.get(name, {}))

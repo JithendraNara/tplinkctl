@@ -463,6 +463,10 @@ def _error_result(kind: str, message: str, **extra: Any) -> dict[str, Any]:
     return {"content": [{"type": "text", "text": json.dumps(payload)}], "isError": True}
 
 
+class CommandFailed(Exception):
+    """A CLI command aborted with a free-form SystemExit message."""
+
+
 def run_cli_json(argv: list[str]) -> str:
     stdout = io.StringIO()
     stderr = io.StringIO()
@@ -472,8 +476,14 @@ def run_cli_json(argv: list[str]) -> str:
         except cli.CliError:
             raise
         except SystemExit as exc:
-            detail = stderr.getvalue().strip() or str(exc)
-            raise ToolInputError(detail.splitlines()[-1] if detail else "Invalid arguments.") from exc
+            if isinstance(exc.code, int) or exc.code is None:
+                # argparse usage errors: an exit status plus an "error:" line
+                # about the client's own arguments.
+                detail = stderr.getvalue().strip()
+                raise ToolInputError(detail.splitlines()[-1] if detail else "Invalid arguments.") from exc
+            # Free-form runtime failures can interpolate upstream exception text
+            # (router URLs, session tokens), so they never cross the boundary.
+            raise CommandFailed(str(exc.code)) from exc
     return stdout.getvalue().strip()
 
 
@@ -500,6 +510,11 @@ def call_tool(name: str, arguments: dict[str, Any] | None = None,
         return _error_result(exc.kind, entry["description"], retryable=entry["retryable"])
     except ToolInputError as exc:
         return _error_result("usage", str(exc))
+    except CommandFailed as exc:
+        # Same contract as the HTTP transport's SystemExit mapping.
+        _log_failure(name, exc)
+        return _error_result("router", "Command could not complete; inspect router state before retrying",
+                             retryable=False)
     except Exception as exc:  # noqa: BLE001 - sanitize everything else
         import requests
 
