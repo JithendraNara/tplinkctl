@@ -204,6 +204,15 @@ tplinkctl --no-input watch speed --count 10 --interval 1 --stream
 - Privacy-check outgoing commits, PR/issue text, reports and artifacts. Secret redaction alone does not make router responses public-safe. Do not upload raw audit or generator logs.
 - See `docs/HTTP_API.md`, `docs/forge.md` and ADR 002.
 
+## Commits, PRs and Releases
+
+- Read `VISION.md` before triage or product decisions; it defines what fits and the merge bar.
+- Conventional Commits with action-first subjects, e.g. `fix(mcp): reject batches outside 2025-03-26`.
+- One coherent change per PR. Fill in `.github/pull_request_template.md`: problem and fix in prose, an exact `Validation:` line, and what was not tested.
+- Add user-visible changes to `CHANGELOG.md` under `Unreleased` as they land, one line each, with the PR or issue reference.
+- Real contributors keep `Co-authored-by:` credit; no agent attribution trailers.
+- A version bump or tag is not a release until the GitHub Release and PyPI upload exist.
+
 ## Development Checks
 
 ```bash
