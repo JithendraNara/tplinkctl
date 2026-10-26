@@ -65,6 +65,8 @@ Profiles:
 - `network-admin`: device administration plus Wi-Fi/VPN/reboot, no raw endpoint experiments.
 - `dangerous`: no profile-level restrictions.
 
+Profile definitions live in `src/tplink_admin/profiles/*.json`. Changing them changes what agents may do: keep `read-only` free of mutations, keep profiles nested from narrowest to widest, and keep the registry's per-tool `profiles` in agreement (`tests/test_profiles.py` enforces all three).
+
 Mutating commands should include a rollback in the agent plan:
 
 ```bash

@@ -123,6 +123,12 @@ tplinkctl schema
 | `network-admin` | Read + `device`, `wifi`, `vpn`, `reboot` | Everything except raw escape hatches | `advanced.raw` |
 | `dangerous` | All (`*`) | All (`*`) | None (unrestricted) |
 
+Profiles are data, not code: each is a JSON file in
+[`src/tplink_admin/profiles/`](src/tplink_admin/profiles/) with explicit
+`allow_commands`, `allow_operations` and `deny_operations` lists, packaged in
+the wheel. Changing what an agent may do is a reviewable diff of those lists.
+`tplinkctl --json capabilities` prints the loaded profiles.
+
 The CLI applies no profile restriction when neither `--profile` nor
 `TPLINK_PROFILE` is set; confirmation guards still apply. The MCP server and
 HTTP API default to `read-only`: set `TPLINK_MCP_PROFILE` (or `TPLINK_PROFILE`)

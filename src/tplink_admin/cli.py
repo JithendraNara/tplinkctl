@@ -224,32 +224,58 @@ MUTATION_OPERATIONS = {
     "router.led.set",
     "advanced.raw",
 }
-POLICY_PROFILES = {
-    "read-only": {
-        "description": "Discovery and read-only router inspection. Blocks mutations and raw endpoint writes.",
-        "allow_commands": sorted(READ_COMMANDS),
-        "allow_operations": sorted(READ_OPERATIONS),
-        "deny_operations": sorted(MUTATION_OPERATIONS),
-    },
-    "device-admin": {
-        "description": "Device inventory plus DHCP reservations and access-control changes. Blocks router-wide network changes.",
-        "allow_commands": sorted(READ_COMMANDS | {"device"}),
-        "allow_operations": sorted(READ_OPERATIONS | {"device.access.set", "device.reserve", "device.release", "device.block", "device.unblock"}),
-        "deny_operations": sorted({"device.vpn", "wifi.toggle", "wifi.config", "vpn.toggle", "vpn.client_toggle", "router.reboot", "advanced.raw"}),
-    },
-    "network-admin": {
-        "description": "Read operations, device administration, Wi-Fi/VPN toggles, and reboot. Blocks raw endpoint experiments.",
-        "allow_commands": sorted(READ_COMMANDS | {"device", "reboot", "vpn", "vpn-client", "wifi", "wifi-config"}),
-        "allow_operations": sorted((READ_OPERATIONS | MUTATION_OPERATIONS) - {"advanced.raw"}),
-        "deny_operations": ["advanced.raw"],
-    },
-    "dangerous": {
-        "description": "No profile-level restrictions. Intended only for trusted local operators.",
-        "allow_commands": ["*"],
-        "allow_operations": ["*"],
-        "deny_operations": [],
-    },
-}
+PROFILE_FIELDS = ("name", "description", "allow_commands", "allow_operations", "deny_operations")
+
+
+def load_policy_profiles(directory: Any = None) -> dict[str, dict[str, Any]]:
+    """Load the packaged safety profiles from `tplink_admin/profiles/*.json`.
+
+    Profiles are data, not code, so a policy change is a reviewable diff of
+    allow/deny lists. The files ship in the wheel; a malformed file fails at
+    import rather than silently widening or narrowing access.
+    """
+    from importlib.resources import files
+
+    directory = files("tplink_admin").joinpath("profiles") if directory is None else directory
+    profiles: dict[str, dict[str, Any]] = {}
+    for entry in sorted(directory.iterdir(), key=lambda e: e.name):
+        if not entry.name.endswith(".json"):
+            continue
+        doc = json.loads(entry.read_text(encoding="utf-8"))
+        if not isinstance(doc, dict) or sorted(doc) != sorted(PROFILE_FIELDS):
+            raise RuntimeError(f"Safety profile {entry.name} must have exactly: {', '.join(PROFILE_FIELDS)}")
+        if doc["name"] != entry.name[: -len(".json")]:
+            raise RuntimeError(f"Safety profile {entry.name} declares name {doc['name']!r}")
+        for key in PROFILE_FIELDS[2:]:
+            if not isinstance(doc[key], list) or not all(isinstance(v, str) and v for v in doc[key]):
+                raise RuntimeError(f"Safety profile {entry.name}: {key} must be a list of non-empty strings")
+        profiles[doc["name"]] = {k: doc[k] for k in PROFILE_FIELDS[1:]}
+    if not profiles:
+        raise RuntimeError("No safety profiles found in tplink_admin/profiles")
+
+    def breadth(name: str) -> tuple[bool, int, str]:
+        allowed = profiles[name]["allow_operations"]
+        return ("*" in allowed, len(set(allowed) - set(profiles[name]["deny_operations"])), name)
+
+    # Least to most privileged, so listings read like a ladder.
+    return {name: profiles[name] for name in sorted(profiles, key=breadth)}
+
+
+POLICY_PROFILES = load_policy_profiles()
+
+
+def profile_denial(profile_name: str, command: str, operation: str) -> str | None:
+    """Return why `profile_name` blocks the command/operation, or None if allowed."""
+    profile = POLICY_PROFILES[profile_name]
+    if operation in profile["deny_operations"]:
+        return f"Operation `{operation}` blocked by profile `{profile_name}`."
+    if "*" not in profile["allow_commands"] and command not in profile["allow_commands"]:
+        return f"Command `{command}` blocked by profile `{profile_name}`."
+    if "*" not in profile["allow_operations"] and operation not in profile["allow_operations"]:
+        return f"Operation `{operation}` blocked by profile `{profile_name}`."
+    return None
+
+
 WIFI_ENDPOINTS = {
     "main": (
         "admin/wireless?form=wireless_2g&form=wireless_5g&form=wireless_5g_2&form=wireless_6g",
@@ -3230,18 +3256,11 @@ def ensure_command_allowed(args: argparse.Namespace) -> None:
     operation = operation_id(args)
     profile_name = getattr(args, "profile", None) or os.getenv(PROFILE_ENV)
     if profile_name:
-        profile = POLICY_PROFILES.get(profile_name)
-        if profile is None:
+        if profile_name not in POLICY_PROFILES:
             fail("usage", f"Unknown profile `{profile_name}`; choose one of: {', '.join(sorted(POLICY_PROFILES))}")
-        allowed_commands = set(profile["allow_commands"])
-        allowed_operations = set(profile["allow_operations"])
-        denied_operations = set(profile["deny_operations"])
-        if operation in denied_operations:
-            fail("permission", f"Operation `{operation}` blocked by profile `{profile_name}`.")
-        if "*" not in allowed_commands and command not in allowed_commands:
-            fail("permission", f"Command `{command}` blocked by profile `{profile_name}`.")
-        if "*" not in allowed_operations and operation not in allowed_operations:
-            fail("permission", f"Operation `{operation}` blocked by profile `{profile_name}`.")
+        denial = profile_denial(profile_name, command, operation)
+        if denial:
+            fail("permission", denial)
     enabled = parse_csv(args.enable_commands) or parse_csv(os.getenv(COMMAND_ENV["enable"]))
     disabled = parse_csv(args.disable_commands) or parse_csv(os.getenv(COMMAND_ENV["disable"]))
     if enabled and command not in enabled and operation not in enabled:

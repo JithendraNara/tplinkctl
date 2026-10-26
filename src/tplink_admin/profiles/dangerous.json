@@ -1,0 +1,11 @@
+{
+  "name": "dangerous",
+  "description": "No profile-level restrictions. Intended only for trusted local operators.",
+  "allow_commands": [
+    "*"
+  ],
+  "allow_operations": [
+    "*"
+  ],
+  "deny_operations": []
+}

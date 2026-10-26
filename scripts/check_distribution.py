@@ -19,6 +19,10 @@ def check(directory):
                     ('__init__', '__main__', 'cli', 'mcp', 'api', 'registry', 'openapi')}
         if not required <= names:
             raise ValueError('Wheel is missing runtime modules')
+        profiles = {'tplink_admin/profiles/' + name + '.json' for name in
+                    ('read-only', 'device-admin', 'network-admin', 'dangerous')}
+        if not profiles <= names:
+            raise ValueError('Wheel is missing packaged safety profiles')
         metadata = BytesParser().parsebytes(wheel.read(next(n for n in names if n.endswith('/METADATA'))))
         version = metadata['Version']
         entries = wheel.read(next(n for n in names if n.endswith('/entry_points.txt'))).decode()
