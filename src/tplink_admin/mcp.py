@@ -2,7 +2,9 @@
 
 This intentionally avoids an MCP SDK dependency. It speaks the core JSON-RPC
 methods used by MCP clients (`initialize`, `tools/list`, `tools/call`) and uses
-Content-Length framing on stdio.
+newline-delimited JSON on stdio, as required by the MCP stdio transport.
+Incoming Content-Length (LSP-style) framed messages are also accepted for
+backward compatibility with earlier builds of this server.
 """
 
 from __future__ import annotations
@@ -392,8 +394,10 @@ def read_message(stream: Any) -> dict[str, Any] | None:
 
 
 def write_message(stream: Any, message: dict[str, Any]) -> None:
+    # MCP stdio transport: one JSON-RPC message per line, no Content-Length
+    # header. Real MCP clients (e.g. the official SDK) reject LSP framing.
     body = json.dumps(message, separators=(",", ":"))
-    stream.write(f"Content-Length: {len(body.encode('utf-8'))}\r\n\r\n{body}")
+    stream.write(body + "\n")
     stream.flush()
 
 
