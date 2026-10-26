@@ -134,16 +134,29 @@ class McpTests(unittest.TestCase):
         self.assertTrue(response["result"]["isError"])
         self.assertIn("confirm=true", response["result"]["content"][0]["text"])
 
-    def test_framed_stdio_round_trip(self):
+    def test_stdio_round_trip_writes_newline_delimited_json(self):
+        # MCP stdio transport contract: one JSON-RPC message per line.
+        # The official MCP client rejects Content-Length (LSP) framing.
+        message = json.dumps({"jsonrpc": "2.0", "id": 4, "method": "tools/list"})
+        output = io.StringIO()
+        with contextlib.redirect_stderr(io.StringIO()):
+            mcp.serve(io.BytesIO((message + "\n").encode()), output)
+        written = output.getvalue()
+        self.assertFalse(written.startswith("Content-Length:"))
+        self.assertTrue(written.endswith("\n"))
+        response = json.loads(written)
+        self.assertEqual(response["id"], 4)
+        self.assertIn("tools", response["result"])
+
+    def test_stdio_accepts_legacy_content_length_input(self):
+        # Earlier builds of this server (and their clients) framed input with
+        # Content-Length headers; the reader must keep accepting that.
         message = json.dumps({"jsonrpc": "2.0", "id": 4, "method": "tools/list"})
         raw = f"Content-Length: {len(message.encode('utf-8'))}\r\n\r\n{message}".encode()
         output = io.StringIO()
         with contextlib.redirect_stderr(io.StringIO()):
             mcp.serve(io.BytesIO(raw), output)
-        written = output.getvalue()
-        self.assertTrue(written.startswith("Content-Length:"))
-        body = written.split("\r\n\r\n", 1)[1]
-        response = json.loads(body)
+        response = json.loads(output.getvalue())
         self.assertEqual(response["id"], 4)
         self.assertIn("tools", response["result"])
 
