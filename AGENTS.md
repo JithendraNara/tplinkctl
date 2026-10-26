@@ -213,7 +213,7 @@ tplinkctl --no-input watch speed --count 10 --interval 1 --stream
 - One coherent change per PR. Fill in `.github/pull_request_template.md`: problem and fix in prose, an exact `Validation:` line, and what was not tested.
 - Add user-visible changes to `CHANGELOG.md` under `Unreleased` as they land, one line each, with the PR or issue reference.
 - Real contributors keep `Co-authored-by:` credit; no agent attribution trailers.
-- A version bump or tag is not a release until the GitHub Release and PyPI upload exist.
+- Releases follow `docs/RELEASING.md`: `scripts/release.py prepare` PR, the Release workflow (dry run first), then `scripts/release.py open` PR. A version bump or tag is not a release until the GitHub Release and PyPI upload exist.
 
 ## Development Checks
 

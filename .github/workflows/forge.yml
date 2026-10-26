@@ -5,6 +5,7 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  workflow_call:  # Release reuses this job to build the SDK release asset
 
 permissions:
   contents: read

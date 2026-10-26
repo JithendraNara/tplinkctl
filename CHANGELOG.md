@@ -29,6 +29,7 @@
 
 ### Added
 
+- Release tooling: `scripts/release.py` (`prepare`, `open`, `check`, `notes`) and a `Release` workflow with a default dry run. It reuses `dist.yml`, which builds and installs the wheel (also used by CI and Publish), and `forge.yml` for the SDK asset. It creates the tag and GitHub Release and dispatches PyPI publishing, which now verifies the uploaded version installs. See `docs/RELEASING.md`; the old checklist at the bottom of this file moved there.
 - `docs/commands.md`, a command reference rendered from `tplinkctl schema` (`python -m tplink_admin.clidoc`, `make docs`); `make contract` fails when it is stale.
 - `VISION.md` (scope, discuss-first areas, merge bar) and a PR template with an explicit validation line.
 - MCP server `instructions`, tool `title`, and `serverInfo` title/description/website; `outputSchema` and `structuredContent` on 2025-06-18+; opt-in `tools/list` pagination (`TPLINK_MCP_PAGE_SIZE`); per-tool rate limits (`TPLINK_MCP_RATE_LIMIT_PER_MINUTE`, plus a tighter `TPLINK_MCP_EXPENSIVE_RATE_LIMIT_PER_MINUTE` for `doctor_deep`/`watch`).
@@ -170,18 +171,3 @@ Initial public release.
 - Live read-only checks against Archer BE3500.
 - Live device reservation/block/unblock flows during development.
 - Known firmware issue documented for `admin/vpn?form=vpn_user_list` on tested BE3500 firmware.
-
-## Release Checklist
-
-- [ ] Run `make test`.
-- [ ] Run `make smoke`.
-- [ ] Run `make demo`.
-- [ ] Run `make agent-doctor`.
-- [ ] Run live read-only doctor if router access is available:
-  `PYTHONPATH=src .venv/bin/python scripts/agent_doctor.py --live --device Pixel-10-Pro`
-- [ ] Confirm no real secrets are present:
-  `rg -n "TPLINK_PASSWORD=|password|secret|token|api[_-]?key" .`
-- [ ] Update `CHANGELOG.md`.
-- [ ] Commit release changes.
-- [ ] Create annotated tag, for example `git tag -a v0.1.0 -m "v0.1.0"`.
-- [ ] Push branch and tag: `git push origin main --tags`.

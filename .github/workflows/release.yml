@@ -1,0 +1,148 @@
+name: Release
+
+# Releases are cut from a main that already contains the
+# `chore(release): prepare X.Y.Z` commit (scripts/release.py prepare).
+# Run with dry_run first: it applies `prepare` in the runner and builds every
+# asset without tagging or publishing. See docs/RELEASING.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release (X.Y.Z, no leading v)
+        required: true
+        type: string
+      dry_run:
+        description: Build and verify everything without tagging or publishing
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate version, tag and source tree
+        env:
+          VERSION: ${{ inputs.version }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || { echo "::error::version must be X.Y.Z"; exit 1; }
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null; then
+            echo "::error::tag v$VERSION already exists"; exit 1
+          fi
+          if [[ "$DRY_RUN" != "true" ]]; then
+            [[ "$REF" == "refs/heads/main" ]] || { echo "::error::real releases run from main, not $REF"; exit 1; }
+            python scripts/release.py check "$VERSION"
+          fi
+
+  dist:
+    needs: preflight
+    permissions:
+      contents: read
+    uses: ./.github/workflows/dist.yml
+    with:
+      prepare-version: ${{ inputs.dry_run && inputs.version || '' }}
+      expect-version: ${{ inputs.version }}
+
+  forge:
+    needs: preflight
+    permissions:
+      contents: read
+    uses: ./.github/workflows/forge.yml
+
+  assemble:
+    needs: [dist, forge]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: assets/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: tplinkctl-http-contract
+          path: forge/
+
+      - name: Assemble SDK archive, checksums and notes
+        env:
+          VERSION: ${{ inputs.version }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          test -f forge/forge-report.json && test -d forge/sdk
+          (cd forge && zip -qr "../assets/tplinkctl-v$VERSION-http-sdk.zip" sdk forge-report.json)
+          (cd assets && sha256sum -- * > "tplinkctl-v$VERSION-SHA256SUMS.txt")
+          if [[ "$DRY_RUN" == "true" ]]; then
+            python scripts/release.py prepare "$VERSION" >/dev/null
+          fi
+          python scripts/release.py notes "$VERSION" > notes.md
+          {
+            echo "## Release v$VERSION (dry run: $DRY_RUN)"
+            echo
+            echo '```'
+            cat "assets/tplinkctl-v$VERSION-SHA256SUMS.txt"
+            echo '```'
+            echo
+            cat notes.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: |
+            assets/
+            notes.md
+          if-no-files-found: error
+
+  publish-release:
+    if: ${{ !inputs.dry_run }}
+    needs: assemble
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # create the tag and GitHub Release
+      actions: write   # dispatch publish.yml (GITHUB_TOKEN events do not trigger `release`)
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+
+      - name: Create tag and GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          gh release create "v$VERSION" assets/* \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "tplinkctl v$VERSION" --notes-file notes.md
+
+      - name: Publish to PyPI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: gh workflow run publish.yml --repo "$GITHUB_REPOSITORY" --ref "v$VERSION" -f tag="v$VERSION"

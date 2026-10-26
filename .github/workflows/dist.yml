@@ -1,0 +1,96 @@
+name: Distribution
+
+# Reusable: build the sdist and wheel once, verify them the way a user would
+# install them, and upload them as an artifact. Called by CI, Release (dry run
+# and real) and Publish, so all three ship the same checked build.
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: "Git ref to build; empty means the caller's ref"
+        type: string
+        default: ""
+      prepare-version:
+        description: "Apply scripts/release.py prepare for this version before building (release dry runs)"
+        type: string
+        default: ""
+      expect-version:
+        description: "Fail unless the built distribution has this version"
+        type: string
+        default: ""
+      artifact-name:
+        description: "Name of the uploaded artifact"
+        type: string
+        default: dist
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tooling
+        run: python -m pip install --upgrade pip build twine '.[test]'
+
+      - name: Prepare release tree (dry run only; not committed)
+        if: inputs.prepare-version != ''
+        env:
+          VERSION: ${{ inputs.prepare-version }}
+        run: |
+          python scripts/release.py prepare "$VERSION"
+          python scripts/release.py check "$VERSION"
+          git --no-pager diff --stat
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      - name: Verify metadata and archive contracts
+        env:
+          EXPECT: ${{ inputs.expect-version }}
+        run: |
+          python -m twine check dist/*
+          report=$(python scripts/check_distribution.py dist)
+          echo "$report"
+          if [[ -n "$EXPECT" ]]; then
+            python -c 'import json, sys; v = json.loads(sys.argv[1])["version"]; sys.exit(0 if v == sys.argv[2] else f"built {v}, expected {sys.argv[2]}")' "$report" "$EXPECT"
+          fi
+
+      - name: Install the wheel in a clean venv and exercise every entry point
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet dist/*.whl
+          cd "$RUNNER_TEMP"
+          bin="$RUNNER_TEMP/venv/bin"
+          "$bin/tplinkctl" --version
+          "$bin/tplinkctl" schema > schema.json
+          "$bin/tplinkctl" --json capabilities > capabilities.json
+          "$bin/tplinkctl-api" --help > /dev/null
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"dist-check","version":"0"}}}' \
+            | "$bin/tplinkctl-mcp" > initialize.json
+          "$bin/python" - <<'PY'
+          import json
+          schema = json.load(open("schema.json"))
+          assert schema["clispec"] == "0.2" and schema["commands"], "schema"
+          profiles = json.load(open("capabilities.json"))["policy_profiles"]
+          assert set(profiles) == {"read-only", "device-admin", "network-admin", "dangerous"}, profiles
+          init = json.loads(open("initialize.json").readline())
+          assert init["result"]["protocolVersion"] == "2025-11-25", init
+          print("installed wheel OK:", schema["version"], len(schema["commands"]), "commands")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: dist/
+          if-no-files-found: error
